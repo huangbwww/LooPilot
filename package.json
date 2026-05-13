@@ -13,6 +13,7 @@
     "test": "node --test",
     "doctor": "node server/doctor.mjs",
     "accept:safe": "node scripts/accept-safe.mjs",
+    "accept:browser": "node scripts/accept-browser.mjs",
     "accept:public": "node scripts/accept-public.mjs",
     "accept:bridge": "node scripts/accept-bridge.mjs",
     "verify": "npm run lint && npm test && npm run build && npm run doctor && npm audit --omit=dev"
