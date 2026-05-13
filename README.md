@@ -19,6 +19,12 @@ To test only viewing/syncing and queue phone messages without starting Codex bri
 npm run dev:safe
 ```
 
+For a one-command local acceptance check that starts safe mode, pairs with a test code, reads local Codex sessions, verifies WebSocket snapshots, and then stops the server:
+
+```bash
+npm run accept:safe
+```
+
 For a public URL through a temporary tunnel:
 
 ```bash

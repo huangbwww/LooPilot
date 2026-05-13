@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "test": "node --test",
     "doctor": "node server/doctor.mjs",
+    "accept:safe": "node scripts/accept-safe.mjs",
     "verify": "npm run lint && npm test && npm run build && npm run doctor && npm audit --omit=dev"
   },
   "dependencies": {
