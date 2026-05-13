@@ -9,16 +9,18 @@ import WebSocket from "ws";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.LOOPILOT_ACCEPT_PORT || 45000 + Math.floor(Math.random() * 1000));
 const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "loopilot-accept-public-"));
+const cloudflaredDir = path.join(os.tmpdir(), "LooPilot", "bin");
 const token = randomBytes(32).toString("base64url");
 const pairingCode = randomInt(0, 1_000_000).toString().padStart(6, "0");
-const publicUrlPattern = /Public URL:\s*(https:\/\/[^\s]+\.trycloudflare\.com)/i;
-const publicUrlTimeoutMs = Number(process.env.LOOPILOT_ACCEPT_PUBLIC_URL_TIMEOUT_MS || 300000);
+const publicUrlPattern = /Public URL:\s*(https:\/\/(?!api\.)[a-z0-9-]+\.trycloudflare\.com)/i;
+const publicUrlTimeoutMs = Number(process.env.LOOPILOT_ACCEPT_PUBLIC_URL_TIMEOUT_MS || 600000);
 
 const child = spawn(process.execPath, [path.join(root, "server", "index.mjs"), "--public"], {
   cwd: root,
   env: {
     ...process.env,
     PORT: String(port),
+    LOOPILOT_CLOUDFLARED_DIR: process.env.LOOPILOT_CLOUDFLARED_DIR || cloudflaredDir,
     LOOPILOT_BRIDGE_MODE: process.env.LOOPILOT_BRIDGE_MODE || "queue",
     LOOPILOT_STATE_DIR: stateDir,
     LOOPILOT_TOKEN: token,
@@ -47,20 +49,29 @@ try {
   const publicUrl = await waitForPublicUrl(publicUrlTimeoutMs);
   assertTruthy(publicUrl.startsWith("https://"), "public https URL");
   assertEqual(publicUrl.includes("token="), false, "public URL does not embed token");
+  const acceptanceBase = process.env.LOOPILOT_FAKE_TUNNEL_URL ? base : publicUrl;
 
-  const pair = await postJson(`${base}/api/pair`, { code: pairingCode });
+  const publicHealth = await waitForJson(
+    `${acceptanceBase}/api/health`,
+    120000,
+    `Public URL did not become ready at ${acceptanceBase}`
+  );
+  assertEqual(publicHealth.ok, true, "public health ok");
+  assertEqual(publicHealth.publicMode, true, "public health mode flag");
+
+  const pair = await postJson(`${acceptanceBase}/api/pair`, { code: pairingCode });
   const expectedPairToken = process.env.LOOPILOT_TEST_BAD_PAIR_TOKEN ? "wrong-token" : token;
   assertEqual(pair.token, expectedPairToken, "pairing token");
 
-  const system = await getJson(`${base}/api/system`, token);
+  const system = await getJson(`${acceptanceBase}/api/system`, token);
   assertEqual(system.publicMode, true, "authenticated system public flag");
   assertTruthy(system.codexHome, "authenticated system codex home");
 
-  const sessions = await getJson(`${base}/api/sessions`, token);
+  const sessions = await getJson(`${acceptanceBase}/api/sessions`, token);
   assertTruthy(Array.isArray(sessions.sessions), "sessions array");
   assertTruthy(sessions.sessions.length > 0, "at least one Codex session");
 
-  const snapshot = await websocketSnapshot(port, token);
+  const snapshot = await websocketSnapshot(acceptanceBase, token);
   assertEqual(snapshot.type, "snapshot", "websocket snapshot type");
   assertTruthy(snapshot.sessions.length > 0, "websocket snapshot sessions");
 
@@ -72,7 +83,8 @@ try {
     codexHome: system.codexHome,
     sessionCount: sessions.sessions.length,
     firstSessionTitle: sessions.sessions[0]?.title || null,
-    bridgeMode: health.bridgeMode
+    bridgeMode: health.bridgeMode,
+    verifiedViaPublicUrl: !process.env.LOOPILOT_FAKE_TUNNEL_URL
   }, null, 2));
 } catch (error) {
   console.error(redactLog(error.stack || error.message || error));
@@ -81,7 +93,7 @@ try {
   await stopChild(child);
 }
 
-async function waitForJson(url, timeoutMs) {
+async function waitForJson(url, timeoutMs, failurePrefix = "Server did not become ready") {
   const started = Date.now();
   let lastError = null;
   while (Date.now() - started < timeoutMs) {
@@ -93,7 +105,13 @@ async function waitForJson(url, timeoutMs) {
       await delay(250);
     }
   }
-  throw new Error(`Server did not become ready: ${redactLog(lastError?.message || stderr || stdout)}`);
+  throw new Error(`${failurePrefix}: ${redactLog(formatError(lastError) || stderr || stdout)}`);
+}
+
+function formatError(error) {
+  if (!error) return "";
+  const cause = error.cause ? ` (${error.cause.code || error.cause.message || error.cause})` : "";
+  return `${error.message || error}${cause}`;
 }
 
 async function waitForPublicUrl(timeoutMs) {
@@ -130,9 +148,9 @@ async function parseResponse(response, method, url) {
   return data;
 }
 
-function websocketSnapshot(targetPort, authToken) {
+function websocketSnapshot(baseUrl, authToken) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${targetPort}/live?token=${encodeURIComponent(authToken)}`);
+    const ws = new WebSocket(`${websocketBaseUrl(baseUrl)}/live?token=${encodeURIComponent(authToken)}`);
     const timer = setTimeout(() => {
       ws.close();
       reject(new Error("Timed out waiting for websocket snapshot"));
@@ -147,6 +165,15 @@ function websocketSnapshot(targetPort, authToken) {
       reject(error);
     });
   });
+}
+
+function websocketBaseUrl(baseUrl) {
+  const url = new URL(baseUrl);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.pathname = "";
+  url.search = "";
+  url.hash = "";
+  return url.toString().replace(/\/$/, "");
 }
 
 function assertEqual(actual, expected, label) {
