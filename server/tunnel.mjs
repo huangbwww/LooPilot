@@ -3,6 +3,7 @@ import https from "node:https";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { getStateDir } from "./state.mjs";
 
 const BIN_DIR = path.join(getStateDir(), "bin");
@@ -11,6 +12,12 @@ const DOWNLOAD_TIMEOUT_MS = 90000;
 
 export async function startPublicTunnel(port) {
   const localUrl = `http://localhost:${port}`;
+  if (process.env.LOOPILOT_FAKE_TUNNEL_URL) {
+    console.log(`Public URL: ${process.env.LOOPILOT_FAKE_TUNNEL_URL}`);
+    const fake = new EventEmitter();
+    fake.kill = () => fake.emit("close", 0);
+    return fake;
+  }
   const bundled = await ensureCloudflaredBinary();
   const child = spawn(bundled, ["tunnel", "--protocol", "http2", "--url", localUrl], {
     stdio: ["ignore", "pipe", "pipe"],

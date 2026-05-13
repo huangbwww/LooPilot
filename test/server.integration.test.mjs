@@ -218,6 +218,60 @@ test("websocket broadcasts updated snapshots when rollout files change", async (
   }
 });
 
+test("public mode starts tunnel path without exposing tokens", async () => {
+  const fixture = makeFixture();
+  const port = 48317 + Math.floor(Math.random() * 1000);
+  const token = "public-mode-token";
+  const pairingCode = "123456";
+  const publicUrl = "https://loopilot-test.trycloudflare.com";
+  const child = spawn(process.execPath, [path.join(projectRoot, "server", "index.mjs"), "--public"], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      CODEX_HOME: fixture.codexHome,
+      LOOPILOT_BRIDGE_MODE: "queue",
+      LOOPILOT_FAKE_TUNNEL_URL: publicUrl,
+      LOOPILOT_PAIRING_CODE: pairingCode,
+      LOOPILOT_STATE_DIR: fixture.stateDir,
+      LOOPILOT_TOKEN: token,
+      PORT: String(port)
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true
+  });
+
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk.toString();
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk.toString();
+  });
+
+  try {
+    await waitFor(() => stdout.includes(`Public URL: ${publicUrl}`), 10000, () => stderr || stdout);
+    const publicLine = stdout.split(/\r?\n/).find((line) => line.includes("Public URL:"));
+    assert.equal(publicLine, `Public URL: ${publicUrl}`);
+    assert.doesNotMatch(publicLine, /token=/);
+
+    const health = await requestJson(port, "/api/health");
+    assert.equal(health.status, 200);
+    assert.equal(health.body.publicMode, true);
+    assert.equal(health.body.bridgeMode, "queue");
+    assert.equal("codexHome" in health.body, false);
+
+    const pair = await requestJson(port, "/api/pair", "", {
+      method: "POST",
+      body: JSON.stringify({ code: pairingCode })
+    });
+    assert.equal(pair.status, 200);
+    assert.equal(pair.body.token, token);
+  } finally {
+    await stopChild(child);
+  }
+});
+
 function makeFixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "loopilot-server-"));
   const codexHome = path.join(root, ".codex");
