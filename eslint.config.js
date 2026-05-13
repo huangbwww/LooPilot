@@ -3,7 +3,7 @@ import react from "eslint-plugin-react";
 
 export default [
   {
-    ignores: ["build/**", "dist/**", "node_modules/**"]
+    ignores: ["build/**", "dist/**", "node_modules/**", ".loopilot/**", ".tmp/**"]
   },
   {
     files: ["**/*.{js,jsx,mjs}"],

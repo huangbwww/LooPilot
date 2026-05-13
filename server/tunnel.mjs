@@ -1,5 +1,7 @@
 import fs from "node:fs";
+import { get as httpGet } from "node:http";
 import https from "node:https";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -19,11 +21,13 @@ export async function startPublicTunnel(port) {
     return fake;
   }
   const bundled = await ensureCloudflaredBinary();
-  const child = spawn(bundled, ["tunnel", "--protocol", "http2", "--url", localUrl], {
+  const metricsAddress = `127.0.0.1:${await getAvailablePort()}`;
+  const child = spawn(bundled, ["tunnel", "--protocol", "http2", "--metrics", metricsAddress, "--url", localUrl], {
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true
   });
   pipeTunnelOutput(child, /https:\/\/(?!api\.)[a-z0-9-]+\.trycloudflare\.com/i);
+  pollMetricsForTunnelUrl(child, metricsAddress);
   return child;
 }
 
@@ -279,4 +283,55 @@ function printTunnelChunk(chunk, urlPattern) {
     console.log(`Public URL: ${match[0]}`);
   }
   else process.stdout.write(text);
+}
+
+function pollMetricsForTunnelUrl(child, metricsAddress) {
+  const started = Date.now();
+  const timer = setInterval(async () => {
+    if (child.exitCode !== null || Date.now() - started > 120000) {
+      clearInterval(timer);
+      return;
+    }
+    try {
+      const url = await readTunnelUrlFromMetrics(metricsAddress);
+      if (!url) return;
+      console.log(`Public URL: ${url}`);
+      clearInterval(timer);
+    } catch {
+      // cloudflared may not have started the metrics endpoint yet.
+    }
+  }, 1000);
+  timer.unref?.();
+  child.once("close", () => clearInterval(timer));
+}
+
+function readTunnelUrlFromMetrics(metricsAddress) {
+  return new Promise((resolve, reject) => {
+    const request = httpGet(`http://${metricsAddress}/metrics`, (response) => {
+      let body = "";
+      response.on("data", (chunk) => {
+        body += chunk.toString();
+      });
+      response.on("end", () => {
+        resolve(body.match(/https:\/\/(?!api\.)[a-z0-9-]+\.trycloudflare\.com/i)?.[0] || "");
+      });
+    });
+    request.setTimeout(1000, () => request.destroy(new Error("metrics request timed out")));
+    request.on("error", reject);
+  });
+}
+
+function getAvailablePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref?.();
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      server.close(() => {
+        if (address && typeof address === "object") resolve(address.port);
+        else reject(new Error("Unable to reserve a metrics port"));
+      });
+    });
+  });
 }

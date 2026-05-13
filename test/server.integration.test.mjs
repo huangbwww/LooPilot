@@ -261,6 +261,12 @@ test("public mode starts tunnel path without exposing tokens", async () => {
     assert.equal(health.body.bridgeMode, "queue");
     assert.equal("codexHome" in health.body, false);
 
+    const publicShell = await requestText(port, "/", {
+      Host: new URL(publicUrl).host
+    });
+    assert.equal(publicShell.status, 200);
+    assert.doesNotMatch(publicShell.body, /Blocked request/);
+
     const pair = await requestJson(port, "/api/pair", "", {
       method: "POST",
       body: JSON.stringify({ code: pairingCode })
@@ -353,7 +359,8 @@ function requestJson(port, route, token = "", options = {}) {
       method: options.method || "GET",
       headers: {
         ...(options.body ? { "Content-Type": "application/json" } : {}),
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.headers || {})
       }
     }, (response) => {
       let body = "";
@@ -377,6 +384,31 @@ function requestJson(port, route, token = "", options = {}) {
     });
     request.on("error", reject);
     if (options.body) request.write(options.body);
+    request.end();
+  });
+}
+
+function requestText(port, route, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const request = http.request({
+      hostname: "127.0.0.1",
+      port,
+      path: route,
+      method: "GET",
+      headers
+    }, (response) => {
+      let body = "";
+      response.on("data", (chunk) => {
+        body += chunk;
+      });
+      response.on("end", () => {
+        resolve({
+          status: response.statusCode,
+          body
+        });
+      });
+    });
+    request.on("error", reject);
     request.end();
   });
 }
