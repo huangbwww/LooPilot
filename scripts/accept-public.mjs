@@ -12,7 +12,7 @@ const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "loopilot-accept-public-"
 const token = randomBytes(32).toString("base64url");
 const pairingCode = randomInt(0, 1_000_000).toString().padStart(6, "0");
 const publicUrlPattern = /Public URL:\s*(https:\/\/[^\s]+\.trycloudflare\.com)/i;
-const publicUrlTimeoutMs = Number(process.env.LOOPILOT_ACCEPT_PUBLIC_URL_TIMEOUT_MS || 120000);
+const publicUrlTimeoutMs = Number(process.env.LOOPILOT_ACCEPT_PUBLIC_URL_TIMEOUT_MS || 300000);
 
 const child = spawn(process.execPath, [path.join(root, "server", "index.mjs"), "--public"], {
   cwd: root,
