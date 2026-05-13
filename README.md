@@ -33,6 +33,14 @@ npm run dev:public
 
 `dev:public` starts the app and downloads a private `cloudflared` binary into the LooPilot state directory on first run, then prints a public `trycloudflare.com` URL. Use the pairing code printed at startup to sign in from the phone. The tunnel uses HTTP/2 mode.
 
+To run the public tunnel acceptance check in one command:
+
+```bash
+npm run accept:public
+```
+
+`accept:public` starts `--public`, waits for a public `trycloudflare.com` URL, verifies local health, pairing, sessions, and WebSocket snapshots, then stops the server. It may download and run `cloudflared`, so use `accept:safe` when you want to avoid external processes.
+
 The app reads Codex Desktop session JSONL files from `~/.codex`, streams changes to the web UI, and sends phone messages through a local `codex app-server` WebSocket bridge. Bridge activity is also recorded under the LooPilot state directory.
 
 Default local URL: `http://localhost:4317`.

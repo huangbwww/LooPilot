@@ -28,6 +28,7 @@ let pairingCode = getPairingCode();
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
+let tunnelHandle = null;
 const pairAttempts = new Map();
 const PAIR_ATTEMPT_LIMIT = 8;
 const PAIR_ATTEMPT_WINDOW_MS = 5 * 60 * 1000;
@@ -169,11 +170,25 @@ function broadcast(payload) {
 
 async function startTunnel(targetPort) {
   try {
-    await startPublicTunnel(targetPort);
+    tunnelHandle = await startPublicTunnel(targetPort);
   } catch (error) {
     console.error(`Unable to start public tunnel: ${error.message}`);
   }
 }
+
+function shutdown() {
+  tunnelHandle?.kill?.();
+  for (const client of wss.clients) client.terminate();
+  wss.close();
+  const forceExit = setTimeout(() => process.exit(0), 2000);
+  forceExit.unref?.();
+  watcher.close().finally(() => {
+    server.close(() => process.exit(0));
+  });
+}
+
+process.once("SIGINT", shutdown);
+process.once("SIGTERM", shutdown);
 
 export function actionDecisionFromBody(body = {}) {
   if (body?.answers && typeof body.decision === "string") {
