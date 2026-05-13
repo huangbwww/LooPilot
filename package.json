@@ -1,0 +1,32 @@
+{
+  "name": "loopilot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server/index.mjs",
+    "dev:safe": "node server/safe.mjs",
+    "dev:public": "node server/index.mjs --public",
+    "build": "vite build",
+    "preview": "node server/index.mjs --prod",
+    "lint": "eslint .",
+    "test": "node --test",
+    "doctor": "node server/doctor.mjs",
+    "verify": "npm run lint && npm test && npm run build && npm run doctor && npm audit --omit=dev"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^5.0.4",
+    "chokidar": "^4.0.3",
+    "express": "^5.1.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "vite": "^7.1.5",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.33.0",
+    "eslint-plugin-react": "^7.37.5",
+    "globals": "^16.3.0"
+  }
+}
