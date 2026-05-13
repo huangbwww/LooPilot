@@ -115,7 +115,7 @@ if (args.has("--prod")) {
     root,
     configFile: false,
     cacheDir: path.join(getStateDir(), "vite-cache"),
-    server: { middlewareMode: true, hmr: false },
+    server: { middlewareMode: true, hmr: false, ws: false },
     appType: "spa"
   });
   app.use(vite.middlewares);

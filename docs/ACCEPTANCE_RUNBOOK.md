@@ -18,7 +18,26 @@ Expected result:
 
 ## 2. Browser / PWA Visual Check
 
-Start the safe server for manual or browser-tool inspection:
+Run the automated headless mobile browser check:
+
+```bash
+npm run build
+npm run accept:browser
+```
+
+Expected result:
+
+- Prints `OK browser acceptance`.
+- Starts and stops a safe-mode server by itself.
+- Uses a 390x844 mobile Chromium viewport against an authorized PWA URL.
+- Runs against the production `build/` output in queue mode.
+- Verifies the rendered app shell, session rows, composer, model selector, reasoning selector, queue-mode badge, and composer placeholder in real browser output.
+- Writes a screenshot to `.tmp/accept-browser-mobile.png`.
+- Writes rendered DOM to `.tmp/accept-browser-mobile.html`.
+
+Set `LOOPILOT_ACCEPT_CHROME` if Chrome or Edge is installed in a non-standard location. Set `LOOPILOT_ACCEPT_BROWSER_SCREENSHOT` to override the screenshot output path.
+
+For manual inspection, start the safe server:
 
 ```bash
 npm run dev:safe
