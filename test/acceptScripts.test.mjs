@@ -98,6 +98,7 @@ test("accept-bridge script completes against a fake app-server", { timeout: 3000
     assert.match(result.stdout, /"bridgeStatus": "sent"/);
     assert.doesNotMatch(result.stdout, /token=/);
     assert.deepEqual(fake.methods, ["initialize", "initialized", "thread/resume", "turn/start"]);
+    assert.deepEqual(fake.initializeParams.capabilities, { experimentalApi: true });
     assert.equal(fake.turnStartParams.model, "gpt-5.5");
     assert.equal(fake.turnStartParams.effort, "high");
     assert.match(fake.turnStartParams.input[0].text, /LooPilot bridge acceptance check/);
@@ -138,6 +139,7 @@ function startFakeAppServer() {
   return new Promise((resolve) => {
     const state = {
       methods: [],
+      initializeParams: null,
       turnStartParams: null
     };
     const server = http.createServer((req, res) => {
@@ -156,6 +158,7 @@ function startFakeAppServer() {
         const message = JSON.parse(data.toString());
         if (message.method) state.methods.push(message.method);
         if (message.method === "initialize") {
+          state.initializeParams = message.params;
           socket.send(JSON.stringify({ id: message.id, result: { serverInfo: { name: "Fake Codex" } } }));
         }
         if (message.method === "thread/resume") {
@@ -173,6 +176,9 @@ function startFakeAppServer() {
         port: server.address().port,
         get methods() {
           return state.methods;
+        },
+        get initializeParams() {
+          return state.initializeParams;
         },
         get turnStartParams() {
           return state.turnStartParams;

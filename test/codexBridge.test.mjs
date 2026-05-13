@@ -48,3 +48,8 @@ test("queue bridge mode records remote send without spawning app-server or CLI",
   assert.match(jobs, /queued_only/);
   assert.match(jobs, /"transport":"queue"/);
 });
+
+test("CLI fallback refuses Windows shell commands for remote message args", () => {
+  assert.equal(bridge.isSafeCliFallbackCommand({ file: "codex.exe", shell: false }), true);
+  assert.equal(bridge.isSafeCliFallbackCommand({ file: "codex.cmd", shell: true }), false);
+});
