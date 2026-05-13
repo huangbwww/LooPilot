@@ -63,5 +63,5 @@ Final acceptance steps are tracked in `docs/ACCEPTANCE_RUNBOOK.md`.
 - The default state directory is project `.loopilot`; if that directory is not writable, LooPilot falls back to the user state directory, then the system temp directory. Set `LOOPILOT_STATE_DIR` to choose it explicitly.
 - Set `LOOPILOT_BRIDGE_MODE=queue` to test the phone UI without starting `codex app-server` or `codex resume` when a message is sent.
 - Production builds are written to `build/`.
-- Set `LOOPILOT_ENABLE_CLI_FALLBACK=1` to allow `codex resume` fallback when the app-server bridge fails. It is disabled by default to avoid duplicate sends after partial app-server failures.
+- Set `LOOPILOT_ENABLE_CLI_FALLBACK=1` to allow `codex resume` fallback when the app-server bridge fails. It is disabled by default to avoid duplicate sends after partial app-server failures. On Windows, fallback refuses `.cmd` shell wrappers for remote messages; set `LOOPILOT_CODEX_COMMAND` to a real `codex.exe` if fallback is needed.
 - Avoid sharing the public URL; it can control local Codex sessions while the server is running.

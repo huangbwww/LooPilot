@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
+import fs from "node:fs";
 import http from "node:http";
+import path from "node:path";
 import WebSocket from "ws";
 
 const DEFAULT_PORT = Number(process.env.LOOPILOT_CODEX_APP_SERVER_PORT || 4331);
@@ -22,8 +24,7 @@ export async function startTurnViaAppServer({ session, message, model, reasoning
     threadId: session.id,
     cwd: session.cwd || process.cwd(),
     model: model || null,
-    config: reasoning ? { model_reasoning_effort: reasoning } : null,
-    persistExtendedHistory: true
+    config: reasoning ? { model_reasoning_effort: reasoning } : null
   });
   return request("turn/start", {
     threadId: session.id,
@@ -72,7 +73,7 @@ async function ensureConnected(onUpdate) {
     });
     await request("initialize", {
       clientInfo: { name: "LooPilot", version: "0.1.0" },
-      capabilities: null
+      capabilities: { experimentalApi: true }
     });
     socket.send(JSON.stringify({ method: "initialized" }));
     initialized = true;
@@ -84,8 +85,10 @@ async function ensureConnected(onUpdate) {
 
 async function ensureProcess() {
   if (await isReady()) return;
-  processHandle = spawn(codexCommand(), ["app-server", "--listen", APP_SERVER_URL], {
+  const command = codexCommand();
+  processHandle = spawn(command.file, ["app-server", "--listen", APP_SERVER_URL], {
     cwd: process.cwd(),
+    shell: command.shell,
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -191,5 +194,21 @@ function sleep(ms) {
 }
 
 function codexCommand() {
-  return process.platform === "win32" ? "codex.cmd" : "codex";
+  if (process.env.LOOPILOT_CODEX_COMMAND) {
+    return { file: process.env.LOOPILOT_CODEX_COMMAND, shell: shouldUseShell(process.env.LOOPILOT_CODEX_COMMAND) };
+  }
+  if (process.platform !== "win32") return { file: "codex", shell: false };
+  const candidates = [];
+  if (process.env.LOCALAPPDATA) candidates.push(path.join(process.env.LOCALAPPDATA, "OpenAI", "Codex", "bin", "codex.exe"));
+  if (process.env.APPDATA) {
+    candidates.push(path.join(process.env.APPDATA, "npm", "codex.exe"));
+    candidates.push(path.join(process.env.APPDATA, "npm", "codex.cmd"));
+  }
+  const found = candidates.find((candidate) => fs.existsSync(candidate));
+  if (found) return { file: found, shell: shouldUseShell(found) };
+  return { file: "codex.cmd", shell: true };
+}
+
+function shouldUseShell(command) {
+  return process.platform === "win32" && command.toLowerCase().endsWith(".cmd");
 }

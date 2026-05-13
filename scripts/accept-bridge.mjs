@@ -78,7 +78,7 @@ try {
 
   const bridge = await waitForBridgeResult(ws, recordId, 60000);
   ws.close();
-  assertEqual(bridge.job.status, "sent", "bridge job status");
+  assertEqual(bridge.job.status, "sent", `bridge job status${bridge.job.error ? ` (${bridge.job.error})` : ""}`);
   assertEqual(bridge.job.transport, "app-server", "bridge transport");
 
   console.log("OK bridge acceptance");

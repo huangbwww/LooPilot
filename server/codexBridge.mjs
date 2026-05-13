@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import { appendBridgeJob, getSessionDetail } from "./codexStore.mjs";
 import { respondToServerRequest, startTurnViaAppServer } from "./codexAppServer.mjs";
 
@@ -104,9 +106,24 @@ function dispatchViaCli({ session, sessionId, message, model, reasoning, recordI
   if (reasoning) args.push("-c", `model_reasoning_effort="${reasoning}"`);
   args.push(sessionId, message);
 
-  const child = spawn(codexCommand(), args, {
+  const command = codexCommand();
+  if (!isSafeCliFallbackCommand(command)) {
+    activeJobs.delete(sessionId);
+    const update = {
+      id: recordId,
+      sessionId,
+      status: "failed",
+      error: "CLI fallback requires a Codex executable that can run without a Windows shell; refusing .cmd fallback for remote messages",
+      finishedAt: new Date().toISOString()
+    };
+    appendBridgeJob(sessionId, update);
+    onUpdate?.(update);
+    return;
+  }
+
+  const child = spawn(command.file, args, {
     cwd,
-    shell: false,
+    shell: command.shell,
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -157,5 +174,25 @@ function appendBridgeOutput(sessionId, recordId, stream, chunk, onUpdate) {
 }
 
 function codexCommand() {
-  return process.platform === "win32" ? "codex.cmd" : "codex";
+  if (process.env.LOOPILOT_CODEX_COMMAND) {
+    return { file: process.env.LOOPILOT_CODEX_COMMAND, shell: shouldUseShell(process.env.LOOPILOT_CODEX_COMMAND) };
+  }
+  if (process.platform !== "win32") return { file: "codex", shell: false };
+  const candidates = [];
+  if (process.env.LOCALAPPDATA) candidates.push(path.join(process.env.LOCALAPPDATA, "OpenAI", "Codex", "bin", "codex.exe"));
+  if (process.env.APPDATA) {
+    candidates.push(path.join(process.env.APPDATA, "npm", "codex.exe"));
+    candidates.push(path.join(process.env.APPDATA, "npm", "codex.cmd"));
+  }
+  const found = candidates.find((candidate) => fs.existsSync(candidate));
+  if (found) return { file: found, shell: shouldUseShell(found) };
+  return { file: "codex.cmd", shell: true };
+}
+
+export function isSafeCliFallbackCommand(command) {
+  return command.shell !== true;
+}
+
+function shouldUseShell(command) {
+  return process.platform === "win32" && command.toLowerCase().endsWith(".cmd");
 }

@@ -30,6 +30,7 @@ test("app-server bridge starts a turn and answers approval requests", { timeout:
     assert.deepEqual(result, { status: "started" });
     assert.deepEqual(fake.approvalResponse, { decision: "accept" });
     assert.deepEqual(fake.methods, ["initialize", "initialized", "thread/resume", "turn/start"]);
+    assert.deepEqual(fake.initializeParams.capabilities, { experimentalApi: true });
     assert.equal(fake.threadResumeParams.threadId, "019e1c98-c592-7dc2-a684-ffec77c153b8");
     assert.equal(fake.turnStartParams.model, "gpt-5.5");
     assert.equal(fake.turnStartParams.effort, "high");
@@ -87,6 +88,7 @@ function startFakeAppServer(port) {
   return new Promise((resolve) => {
     const state = {
       methods: [],
+      initializeParams: null,
       approvalResponse: null,
       threadResumeParams: null,
       turnStartParams: null
@@ -108,6 +110,7 @@ function startFakeAppServer(port) {
         const message = JSON.parse(data.toString());
         if (message.method) state.methods.push(message.method);
         if (message.method === "initialize") {
+          state.initializeParams = message.params;
           socket.send(JSON.stringify({ id: message.id, result: { serverInfo: { name: "Fake Codex" } } }));
         }
         if (message.method === "thread/resume") {
@@ -137,6 +140,9 @@ function startFakeAppServer(port) {
         },
         get approvalResponse() {
           return state.approvalResponse;
+        },
+        get initializeParams() {
+          return state.initializeParams;
         },
         get threadResumeParams() {
           return state.threadResumeParams;
