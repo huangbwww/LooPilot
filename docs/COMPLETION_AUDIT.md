@@ -59,7 +59,7 @@ npm run accept:public
 Run this when the machine is stable enough to start the real Codex app-server bridge and send a short message to a selected session:
 
 ```bash
-set LOOPILOT_ACCEPT_SESSION_ID=<session-id>
+$env:LOOPILOT_ACCEPT_SESSION_ID = "<session-id>"
 npm run accept:bridge
 ```
 
@@ -85,4 +85,4 @@ Recommended safe next step:
 npm run dev:safe
 ```
 
-Use this to validate local phone UI behavior without launching Codex bridge processes. After the machine is stable, validate `npm run dev` remote-send bridge and `npm run dev:public` tunnel separately.
+Use this to validate local phone UI behavior without launching Codex bridge processes. Follow `docs/ACCEPTANCE_RUNBOOK.md` for the final safe, browser, public tunnel, and real bridge acceptance sequence.

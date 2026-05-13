@@ -44,15 +44,17 @@ npm run accept:public
 To run the real Codex app-server bridge acceptance check, choose a target session explicitly:
 
 ```bash
-set LOOPILOT_ACCEPT_SESSION_ID=<session-id>
+$env:LOOPILOT_ACCEPT_SESSION_ID = "<session-id>"
 npm run accept:bridge
 ```
 
-For a quick local check against the newest session, set `LOOPILOT_ACCEPT_USE_LATEST=1` instead. `accept:bridge` sends a short message through the app-server bridge and disables CLI fallback for the check, so a failed app-server bridge fails the acceptance run instead of starting `codex resume`.
+`accept:bridge` sends a short message through the app-server bridge and disables CLI fallback for the check, so a failed app-server bridge fails the acceptance run instead of starting `codex resume`. Use `LOOPILOT_ACCEPT_USE_LATEST=1` only after confirming the newest session is the intended target.
 
 The app reads Codex Desktop session JSONL files from `~/.codex`, streams changes to the web UI, and sends phone messages through a local `codex app-server` WebSocket bridge. Bridge activity is also recorded under the LooPilot state directory.
 
 Default local URL: `http://localhost:4317`.
+
+Final acceptance steps are tracked in `docs/ACCEPTANCE_RUNBOOK.md`.
 
 ## Notes
 

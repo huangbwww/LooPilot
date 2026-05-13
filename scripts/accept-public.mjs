@@ -178,14 +178,24 @@ function stopChild(target) {
       resolve();
       return;
     }
-    const timer = setTimeout(() => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(forceTimer);
+      clearTimeout(hardTimer);
+      resolve();
+    };
+    const forceTimer = setTimeout(() => {
       if (target.exitCode === null) target.kill("SIGKILL");
-      resolve();
+    }, 2000);
+    const hardTimer = setTimeout(() => {
+      target.stdout?.destroy();
+      target.stderr?.destroy();
+      target.unref?.();
+      finish();
     }, 5000);
-    target.once("exit", () => {
-      clearTimeout(timer);
-      resolve();
-    });
+    target.once("exit", finish);
     target.kill();
   });
 }
