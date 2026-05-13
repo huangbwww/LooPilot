@@ -272,6 +272,48 @@ test("public mode starts tunnel path without exposing tokens", async () => {
   }
 });
 
+test("server shutdown terminates active websocket clients", async () => {
+  const fixture = makeFixture();
+  const port = 49317 + Math.floor(Math.random() * 1000);
+  const token = "shutdown-test-token";
+  const child = spawn(process.execPath, [path.join(projectRoot, "server", "index.mjs")], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      CODEX_HOME: fixture.codexHome,
+      LOOPILOT_BRIDGE_MODE: "queue",
+      LOOPILOT_PAIRING_CODE: "123456",
+      LOOPILOT_STATE_DIR: fixture.stateDir,
+      LOOPILOT_TOKEN: token,
+      PORT: String(port)
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true
+  });
+
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk.toString();
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk.toString();
+  });
+
+  let ws = null;
+  try {
+    await waitFor(() => stdout.includes("Authorized URL:"), 10000, () => stderr || stdout);
+    ws = new WebSocket(`ws://127.0.0.1:${port}/live?token=${encodeURIComponent(token)}`);
+    const initial = await websocketMessage(ws);
+    assert.equal(initial.type, "snapshot");
+    child.kill();
+    await waitForChildExit(child, 5000);
+  } finally {
+    ws?.close();
+    if (child.exitCode === null && !child.signalCode) await stopChild(child);
+  }
+});
+
 function makeFixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "loopilot-server-"));
   const codexHome = path.join(root, ".codex");
@@ -410,5 +452,21 @@ function stopChild(child) {
       resolve();
     });
     child.kill();
+  });
+}
+
+function waitForChildExit(child, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    if (child.exitCode !== null || child.signalCode) {
+      resolve();
+      return;
+    }
+    const timer = setTimeout(() => {
+      reject(new Error("Child process did not exit"));
+    }, timeoutMs);
+    child.once("exit", () => {
+      clearTimeout(timer);
+      resolve();
+    });
   });
 }
