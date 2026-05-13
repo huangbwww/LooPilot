@@ -4,9 +4,8 @@ import test from "node:test";
 import { WebSocketServer } from "ws";
 
 test("app-server bridge starts a turn and answers approval requests", { timeout: 10000 }, async () => {
-  const port = 48100 + Math.floor(Math.random() * 1000);
-  process.env.LOOPILOT_CODEX_APP_SERVER_PORT = String(port);
-  const fake = await startFakeAppServer(port);
+  const fake = await startFakeAppServer();
+  process.env.LOOPILOT_CODEX_APP_SERVER_PORT = String(fake.port);
   const appServer = await import(`../server/codexAppServer.mjs?case=${Date.now()}`);
   const updates = [];
 
@@ -41,9 +40,8 @@ test("app-server bridge starts a turn and answers approval requests", { timeout:
 });
 
 test("app-server bridge routes server requests to the latest turn callback", { timeout: 10000 }, async () => {
-  const port = 49100 + Math.floor(Math.random() * 1000);
-  process.env.LOOPILOT_CODEX_APP_SERVER_PORT = String(port);
-  const fake = await startFakeAppServer(port);
+  const fake = await startFakeAppServer();
+  process.env.LOOPILOT_CODEX_APP_SERVER_PORT = String(fake.port);
   const appServer = await import(`../server/codexAppServer.mjs?case=${Date.now()}`);
   const firstUpdates = [];
   const secondUpdates = [];
@@ -84,7 +82,7 @@ test("app-server bridge routes server requests to the latest turn callback", { t
   }
 });
 
-function startFakeAppServer(port) {
+function startFakeAppServer() {
   return new Promise((resolve) => {
     const state = {
       methods: [],
@@ -133,8 +131,10 @@ function startFakeAppServer(port) {
       });
     });
 
-    server.listen(port, "127.0.0.1", () => {
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
       resolve({
+        port: address.port,
         get methods() {
           return state.methods;
         },

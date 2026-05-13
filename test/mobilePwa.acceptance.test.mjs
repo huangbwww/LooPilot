@@ -49,7 +49,9 @@ test("mobile PWA shell advertises an installable standalone app", () => {
 
 test("offline shell keeps app assets available without intercepting live API traffic", () => {
   assert.match(serviceWorker, /self\.addEventListener\("install"/);
-  assert.match(serviceWorker, /const CACHE = "loopilot-v3"/);
+  assert.match(serviceWorker, /const CACHE = "loopilot-v4"/);
+  assert.match(serviceWorker, /self\.skipWaiting\(\)/);
+  assert.match(serviceWorker, /\.then\(\(\) => self\.clients\.claim\(\)\)/);
   assert.match(serviceWorker, /cache\.addAll\(ASSETS\)/);
   assert.match(serviceWorker, /"\/manifest\.webmanifest"/);
   assert.match(serviceWorker, /"\/icon\.svg"/);
@@ -59,7 +61,10 @@ test("offline shell keeps app assets available without intercepting live API tra
   assert.match(serviceWorker, /response\.clone\(\)/);
   assert.match(serviceWorker, /cache\.put\(event\.request, copy\)/);
   assert.match(serviceWorker, /caches\.match\("\/"\)/);
+  assert.match(app, /if \("serviceWorker" in navigator\)/);
+  assert.match(app, /if \(import\.meta\.env\.PROD\)/);
   assert.match(app, /navigator\.serviceWorker\.register\("\/sw\.js"\)/);
+  assert.match(app, /registration\.unregister\(\)/);
 });
 
 test("phone layout exposes drawer navigation, scrim dismissal, and safe-area controls", () => {
