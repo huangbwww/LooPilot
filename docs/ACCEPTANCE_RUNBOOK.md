@@ -54,6 +54,8 @@ Expected result:
 - Verifies local health, pairing, authenticated sessions, and WebSocket snapshot.
 - Exits by itself and attempts to stop the tunnel process.
 
+The first run may spend several minutes downloading `cloudflared`. To override the public URL wait window, set `LOOPILOT_ACCEPT_PUBLIC_URL_TIMEOUT_MS`.
+
 Then run the manual phone check with the server kept alive:
 
 ```bash
