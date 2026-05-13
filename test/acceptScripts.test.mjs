@@ -42,6 +42,21 @@ test("accept-public script redacts credentials when tunnel URL validation fails"
   assert.match(result.stderr, /Pairing code: \[redacted\]/);
 });
 
+test("accept-public script rejects Cloudflare API URLs as tunnel URLs", { timeout: 30000 }, async () => {
+  const fixture = makeFixture();
+  const result = await runNodeScript("scripts/accept-public.mjs", {
+    CODEX_HOME: fixture.codexHome,
+    LOOPILOT_ACCEPT_PORT: String(50700 + Math.floor(Math.random() * 1000)),
+    LOOPILOT_ACCEPT_PUBLIC_URL_TIMEOUT_MS: "1000",
+    LOOPILOT_FAKE_TUNNEL_URL: "https://api.trycloudflare.com"
+  });
+
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /Public tunnel URL was not printed/);
+  assert.doesNotMatch(result.stderr, /token=/);
+  assert.doesNotMatch(result.stderr, /Pairing code:\s*\d{6}/);
+});
+
 test("accept-public script redacts credentials from assertion failures", { timeout: 30000 }, async () => {
   const fixture = makeFixture();
   const result = await runNodeScript("scripts/accept-public.mjs", {
@@ -69,7 +84,7 @@ test("accept-bridge script requires an explicit target session", { timeout: 3000
 
 test("accept-bridge script completes against a fake app-server", { timeout: 30000 }, async () => {
   const fixture = makeFixture();
-  const fake = await startFakeAppServer(53200 + Math.floor(Math.random() * 1000));
+  const fake = await startFakeAppServer();
   try {
     const result = await runNodeScript("scripts/accept-bridge.mjs", {
       CODEX_HOME: fixture.codexHome,
@@ -119,7 +134,7 @@ function makeFixture() {
   return { codexHome };
 }
 
-function startFakeAppServer(port) {
+function startFakeAppServer() {
   return new Promise((resolve) => {
     const state = {
       methods: [],
@@ -153,9 +168,9 @@ function startFakeAppServer(port) {
       });
     });
 
-    server.listen(port, "127.0.0.1", () => {
+    server.listen(0, "127.0.0.1", () => {
       resolve({
-        port,
+        port: server.address().port,
         get methods() {
           return state.methods;
         },

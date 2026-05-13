@@ -6,7 +6,7 @@ import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { getStateDir } from "./state.mjs";
 
-const BIN_DIR = path.join(getStateDir(), "bin");
+const BIN_DIR = process.env.LOOPILOT_CLOUDFLARED_DIR || path.join(getStateDir(), "bin");
 const CLOUDFLARED_VERSION = "latest";
 const DOWNLOAD_TIMEOUT_MS = 90000;
 
@@ -23,26 +23,45 @@ export async function startPublicTunnel(port) {
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true
   });
-  pipeTunnelOutput(child, /https:\/\/[^\s]+\.trycloudflare\.com/i);
+  pipeTunnelOutput(child, /https:\/\/(?!api\.)[a-z0-9-]+\.trycloudflare\.com/i);
   return child;
 }
 
 export async function ensureCloudflaredBinary() {
   fs.mkdirSync(BIN_DIR, { recursive: true });
   const target = path.join(BIN_DIR, cloudflaredFilename());
-  if (fs.existsSync(target) && fs.statSync(target).size > 1024 * 1024) return target;
+  if (await isUsableCloudflaredBinary(target)) return target;
+  fs.rmSync(target, { force: true });
 
   const url = cloudflaredDownloadUrl();
+  const archiveTarget = url.endsWith(".tgz") ? `${target}.tgz` : target;
   console.log(`Downloading cloudflared from ${url}`);
-  try {
-    await downloadWithRetry(url, target);
-  } catch (error) {
-    if (process.platform !== "win32") throw error;
-    console.log(`Node download failed, retrying with PowerShell: ${error.message}`);
-    await downloadWithPowerShell(url, target);
+  const downloaders = [
+    { name: "Node", fn: () => downloadWithRetry(url, archiveTarget) }
+  ];
+  if (process.platform === "win32") {
+    downloaders.push(
+      { name: "PowerShell", fn: () => downloadWithPowerShell(url, archiveTarget) },
+      { name: "curl.exe", fn: () => downloadWithCurl(url, archiveTarget) }
+    );
   }
-  if (process.platform !== "win32") fs.chmodSync(target, 0o755);
-  return target;
+  let lastError = null;
+  for (const downloader of downloaders) {
+    fs.rmSync(target, { force: true });
+    fs.rmSync(archiveTarget, { force: true });
+    fs.rmSync(`${archiveTarget}.download`, { force: true });
+    try {
+      await downloader.fn();
+      if (archiveTarget !== target) await extractCloudflaredArchive(archiveTarget, target);
+      if (process.platform !== "win32") fs.chmodSync(target, 0o755);
+      if (await isUsableCloudflaredBinary(target)) return target;
+      throw new Error("downloaded binary did not run `cloudflared --version` successfully");
+    } catch (error) {
+      lastError = error;
+      if (downloader !== downloaders.at(-1)) console.log(`${downloader.name} download failed, retrying: ${error.message}`);
+    }
+  }
+  throw lastError;
 }
 
 function cloudflaredFilename() {
@@ -140,6 +159,106 @@ function downloadWithPowerShell(url, destination) {
       else reject(new Error(stderr.trim() || `PowerShell download exited with code ${code}`));
     });
     child.on("error", reject);
+  });
+}
+
+function downloadWithCurl(url, destination) {
+  return new Promise((resolve, reject) => {
+    const child = spawn("curl.exe", [
+      "-L",
+      "--fail",
+      "--retry",
+      "3",
+      "--connect-timeout",
+      "30",
+      "--max-time",
+      "600",
+      "-o",
+      destination,
+      url
+    ], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("close", (code) => {
+      if (code === 0 && fs.existsSync(destination)) resolve();
+      else reject(new Error(stderr.trim() || `curl.exe download exited with code ${code}`));
+    });
+    child.on("error", reject);
+  });
+}
+
+function extractCloudflaredArchive(archive, target) {
+  return new Promise((resolve, reject) => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "loopilot-cloudflared-extract-"));
+    const child = spawn("tar", ["-xzf", archive, "-C", tempDir], {
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("close", (code) => {
+      try {
+        if (code !== 0) throw new Error(stderr.trim() || `tar exited with code ${code}`);
+        const binary = findExtractedCloudflared(tempDir);
+        if (!binary) throw new Error("cloudflared archive did not contain a cloudflared binary");
+        fs.copyFileSync(binary, target);
+        resolve();
+      } catch (error) {
+        reject(error);
+      } finally {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+        fs.rmSync(archive, { force: true });
+      }
+    });
+    child.on("error", (error) => {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+      reject(error);
+    });
+  });
+}
+
+function findExtractedCloudflared(root) {
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const fullPath = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      const found = findExtractedCloudflared(fullPath);
+      if (found) return found;
+    } else if (entry.name === "cloudflared") {
+      return fullPath;
+    }
+  }
+  return "";
+}
+
+function isUsableCloudflaredBinary(target) {
+  return new Promise((resolve) => {
+    if (!fs.existsSync(target) || fs.statSync(target).size <= 1024 * 1024) {
+      resolve(false);
+      return;
+    }
+    let child;
+    try {
+      child = spawn(target, ["--version"], { windowsHide: true, stdio: ["ignore", "ignore", "ignore"] });
+    } catch {
+      resolve(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      resolve(false);
+    }, 15000);
+    child.on("error", () => {
+      clearTimeout(timer);
+      resolve(false);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolve(code === 0);
+    });
   });
 }
 

@@ -70,10 +70,10 @@ Expected result:
 
 - Prints `OK public acceptance`.
 - Prints a `https://*.trycloudflare.com` public URL with no `token=` query.
-- Verifies local health, pairing, authenticated sessions, and WebSocket snapshot.
+- Verifies local health, then verifies `/api/health`, pairing, authenticated sessions, and `/live` WebSocket through the public URL for real tunnel runs.
 - Exits by itself and attempts to stop the tunnel process.
 
-The first run may spend several minutes downloading `cloudflared`. To override the public URL wait window, set `LOOPILOT_ACCEPT_PUBLIC_URL_TIMEOUT_MS`.
+The first run may spend several minutes downloading `cloudflared`. The acceptance command caches the binary under the user temp `LooPilot\bin` directory unless `LOOPILOT_CLOUDFLARED_DIR` is set. To override the public URL wait window, set `LOOPILOT_ACCEPT_PUBLIC_URL_TIMEOUT_MS`.
 
 Then run the manual phone check with the server kept alive:
 
