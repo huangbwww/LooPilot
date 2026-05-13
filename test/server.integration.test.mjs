@@ -159,19 +159,79 @@ test("random pairing codes rotate after a successful exchange", async () => {
   }
 });
 
+test("websocket broadcasts updated snapshots when rollout files change", async () => {
+  const fixture = makeFixture();
+  const port = 47317 + Math.floor(Math.random() * 1000);
+  const token = "watcher-test-token";
+  const child = spawn(process.execPath, [path.join(projectRoot, "server", "index.mjs")], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      CODEX_HOME: fixture.codexHome,
+      LOOPILOT_BRIDGE_MODE: "queue",
+      LOOPILOT_PAIRING_CODE: "123456",
+      LOOPILOT_STATE_DIR: fixture.stateDir,
+      LOOPILOT_TOKEN: token,
+      PORT: String(port)
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true
+  });
+
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk.toString();
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk.toString();
+  });
+
+  let ws = null;
+  try {
+    await waitFor(() => stdout.includes("Authorized URL:"), 10000, () => stderr || stdout);
+    ws = new WebSocket(`ws://127.0.0.1:${port}/live?token=${encodeURIComponent(token)}`);
+    const initial = await websocketMessage(ws);
+    assert.equal(initial.type, "snapshot");
+    assert.equal(initial.sessions[0].lastOutput, "ready");
+
+    await delay(1000);
+    fs.appendFileSync(
+      fixture.rolloutPath,
+      `\n${JSON.stringify({
+        timestamp: "2026-05-13T01:00:02.000Z",
+        type: "response_item",
+        payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "live update arrived" }] }
+      })}`,
+      "utf8"
+    );
+
+    const updated = await waitForWebsocketMessage(
+      ws,
+      (message) => message.type === "snapshot" && message.sessions[0]?.lastOutput === "live update arrived",
+      10000
+    );
+    assert.equal(updated.sessions[0].id, fixture.sessionId);
+  } finally {
+    ws?.close();
+    await stopChild(child);
+  }
+});
+
 function makeFixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "loopilot-server-"));
   const codexHome = path.join(root, ".codex");
   const stateDir = path.join(root, ".loopilot");
   const sessionId = "019e1c98-c592-7dc2-a684-ffec77c153b8";
   const rolloutDir = path.join(codexHome, "sessions", "2026", "05", "13");
+  const rolloutPath = path.join(rolloutDir, `rollout-2026-05-13T09-00-00-${sessionId}.jsonl`);
   fs.mkdirSync(rolloutDir, { recursive: true });
   fs.writeFileSync(
     path.join(codexHome, "session_index.jsonl"),
     `${JSON.stringify({ id: sessionId, thread_name: "Server Fixture", updated_at: "2026-05-13T01:00:00.000Z" })}\n`
   );
   fs.writeFileSync(
-    path.join(rolloutDir, `rollout-2026-05-13T09-00-00-${sessionId}.jsonl`),
+    rolloutPath,
     [
       JSON.stringify({
         timestamp: "2026-05-13T01:00:00.000Z",
@@ -185,7 +245,7 @@ function makeFixture() {
       })
     ].join("\n")
   );
-  return { root, codexHome, stateDir, sessionId };
+  return { root, codexHome, stateDir, sessionId, rolloutPath };
 }
 
 function requestJson(port, route, token = "", options = {}) {
@@ -236,6 +296,41 @@ function websocketSnapshot(port, token) {
   });
 }
 
+function websocketMessage(ws) {
+  return new Promise((resolve, reject) => {
+    ws.once("message", (data) => {
+      resolve(JSON.parse(data.toString()));
+    });
+    ws.once("error", reject);
+  });
+}
+
+function waitForWebsocketMessage(ws, predicate, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error("Timed out waiting for websocket message"));
+    }, timeoutMs);
+    function cleanup() {
+      clearTimeout(timer);
+      ws.off("message", onMessage);
+      ws.off("error", onError);
+    }
+    function onMessage(data) {
+      const message = JSON.parse(data.toString());
+      if (!predicate(message)) return;
+      cleanup();
+      resolve(message);
+    }
+    function onError(error) {
+      cleanup();
+      reject(error);
+    }
+    ws.on("message", onMessage);
+    ws.on("error", onError);
+  });
+}
+
 async function waitFor(predicate, timeoutMs, getError) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
@@ -243,6 +338,10 @@ async function waitFor(predicate, timeoutMs, getError) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error(getError());
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function stopChild(child) {
