@@ -6,6 +6,7 @@ import chokidar from "chokidar";
 import { WebSocketServer } from "ws";
 import { getAuthToken, getPairingCode, isPairingCodeValid, isWsAuthorized, requireAuth, rotatePairingCode } from "./auth.mjs";
 import { dispatchRemoteMessage, resolveBridgeRequest } from "./codexBridge.mjs";
+import { shutdownAppServer } from "./codexAppServer.mjs";
 import { getStateDir } from "./state.mjs";
 import { startPublicTunnel } from "./tunnel.mjs";
 import {
@@ -114,7 +115,7 @@ if (args.has("--prod")) {
     root,
     configFile: false,
     cacheDir: path.join(getStateDir(), "vite-cache"),
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, hmr: false },
     appType: "spa"
   });
   app.use(vite.middlewares);
@@ -178,6 +179,7 @@ async function startTunnel(targetPort) {
 
 function shutdown() {
   tunnelHandle?.kill?.();
+  shutdownAppServer();
   for (const client of wss.clients) client.terminate();
   wss.close();
   const forceExit = setTimeout(() => process.exit(0), 2000);

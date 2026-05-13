@@ -4,6 +4,8 @@ import { respondToServerRequest, startTurnViaAppServer } from "./codexAppServer.
 
 const activeJobs = new Map();
 const BRIDGE_MODE = process.env.LOOPILOT_BRIDGE_MODE || "app-server";
+const DISABLE_CLI_FALLBACK = process.env.LOOPILOT_DISABLE_CLI_FALLBACK === "1";
+const ENABLE_CLI_FALLBACK = process.env.LOOPILOT_ENABLE_CLI_FALLBACK === "1";
 
 export function dispatchRemoteMessage({ sessionId, message, model, reasoning, recordId, onUpdate }) {
   const session = getSessionDetail(sessionId);
@@ -13,10 +15,10 @@ export function dispatchRemoteMessage({ sessionId, message, model, reasoning, re
       error: "Session not found"
     };
   }
-  if (activeJobs.has(sessionId)) {
+  if (activeJobs.has(sessionId) || (BRIDGE_MODE !== "queue" && activeJobs.size > 0)) {
     return {
       ok: false,
-      error: "A Codex bridge job is already running for this session"
+      error: "A Codex bridge job is already running"
     };
   }
 
@@ -71,13 +73,19 @@ export function dispatchRemoteMessage({ sessionId, message, model, reasoning, re
     appendBridgeJob(sessionId, update);
     onUpdate?.(update);
   }).catch((error) => {
-    appendBridgeJob(sessionId, {
+    const failure = {
       id: recordId,
       sessionId,
       status: "app_server_failed",
       error: error.message,
       at: new Date().toISOString()
-    });
+    };
+    appendBridgeJob(sessionId, failure);
+    onUpdate?.(failure);
+    if (DISABLE_CLI_FALLBACK || !ENABLE_CLI_FALLBACK) {
+      activeJobs.delete(sessionId);
+      return;
+    }
     dispatchViaCli({ session, sessionId, message, model, reasoning, recordId, onUpdate });
   });
 
