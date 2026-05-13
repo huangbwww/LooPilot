@@ -41,6 +41,15 @@ npm run accept:public
 
 `accept:public` starts `--public`, waits for a public `trycloudflare.com` URL, verifies local health, pairing, sessions, and WebSocket snapshots, then stops the server. It may download and run `cloudflared`, so use `accept:safe` when you want to avoid external processes.
 
+To run the real Codex app-server bridge acceptance check, choose a target session explicitly:
+
+```bash
+set LOOPILOT_ACCEPT_SESSION_ID=<session-id>
+npm run accept:bridge
+```
+
+For a quick local check against the newest session, set `LOOPILOT_ACCEPT_USE_LATEST=1` instead. `accept:bridge` sends a short message through the app-server bridge and disables CLI fallback for the check, so a failed app-server bridge fails the acceptance run instead of starting `codex resume`.
+
 The app reads Codex Desktop session JSONL files from `~/.codex`, streams changes to the web UI, and sends phone messages through a local `codex app-server` WebSocket bridge. Bridge activity is also recorded under the LooPilot state directory.
 
 Default local URL: `http://localhost:4317`.
@@ -52,5 +61,5 @@ Default local URL: `http://localhost:4317`.
 - The default state directory is project `.loopilot`; if that directory is not writable, LooPilot falls back to the user state directory, then the system temp directory. Set `LOOPILOT_STATE_DIR` to choose it explicitly.
 - Set `LOOPILOT_BRIDGE_MODE=queue` to test the phone UI without starting `codex app-server` or `codex resume` when a message is sent.
 - Production builds are written to `build/`.
-- If `codex app-server` cannot be reached, remote send falls back to `codex resume`.
+- Set `LOOPILOT_ENABLE_CLI_FALLBACK=1` to allow `codex resume` fallback when the app-server bridge fails. It is disabled by default to avoid duplicate sends after partial app-server failures.
 - Avoid sharing the public URL; it can control local Codex sessions while the server is running.

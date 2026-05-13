@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { WebSocketServer } from "ws";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 
@@ -55,6 +57,40 @@ test("accept-public script redacts credentials from assertion failures", { timeo
   assert.match(result.stderr, /\[redacted-token\]/);
 });
 
+test("accept-bridge script requires an explicit target session", { timeout: 30000 }, async () => {
+  const result = await runNodeScript("scripts/accept-bridge.mjs", {
+    LOOPILOT_ACCEPT_PORT: String(52200 + Math.floor(Math.random() * 1000))
+  });
+
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /LOOPILOT_ACCEPT_SESSION_ID/);
+  assert.doesNotMatch(result.stderr, /token=/);
+});
+
+test("accept-bridge script completes against a fake app-server", { timeout: 30000 }, async () => {
+  const fixture = makeFixture();
+  const fake = await startFakeAppServer(53200 + Math.floor(Math.random() * 1000));
+  try {
+    const result = await runNodeScript("scripts/accept-bridge.mjs", {
+      CODEX_HOME: fixture.codexHome,
+      LOOPILOT_ACCEPT_PORT: String(54200 + Math.floor(Math.random() * 1000)),
+      LOOPILOT_ACCEPT_USE_LATEST: "1",
+      LOOPILOT_CODEX_APP_SERVER_PORT: String(fake.port)
+    });
+
+    assert.equal(result.code, 0, result.stderr || result.stdout);
+    assert.match(result.stdout, /OK bridge acceptance/);
+    assert.match(result.stdout, /"bridgeStatus": "sent"/);
+    assert.doesNotMatch(result.stdout, /token=/);
+    assert.deepEqual(fake.methods, ["initialize", "initialized", "thread/resume", "turn/start"]);
+    assert.equal(fake.turnStartParams.model, "gpt-5.5");
+    assert.equal(fake.turnStartParams.effort, "high");
+    assert.match(fake.turnStartParams.input[0].text, /LooPilot bridge acceptance check/);
+  } finally {
+    await fake.close();
+  }
+});
+
 function makeFixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "loopilot-accept-public-test-"));
   const codexHome = path.join(root, ".codex");
@@ -83,12 +119,79 @@ function makeFixture() {
   return { codexHome };
 }
 
+function startFakeAppServer(port) {
+  return new Promise((resolve) => {
+    const state = {
+      methods: [],
+      turnStartParams: null
+    };
+    const server = http.createServer((req, res) => {
+      if (req.url === "/readyz") {
+        res.writeHead(200);
+        res.end("ok");
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    const wss = new WebSocketServer({ server });
+
+    wss.on("connection", (socket) => {
+      socket.on("message", (data) => {
+        const message = JSON.parse(data.toString());
+        if (message.method) state.methods.push(message.method);
+        if (message.method === "initialize") {
+          socket.send(JSON.stringify({ id: message.id, result: { serverInfo: { name: "Fake Codex" } } }));
+        }
+        if (message.method === "thread/resume") {
+          socket.send(JSON.stringify({ id: message.id, result: { threadId: message.params.threadId } }));
+        }
+        if (message.method === "turn/start") {
+          state.turnStartParams = message.params;
+          socket.send(JSON.stringify({ id: message.id, result: { status: "started" } }));
+        }
+      });
+    });
+
+    server.listen(port, "127.0.0.1", () => {
+      resolve({
+        port,
+        get methods() {
+          return state.methods;
+        },
+        get turnStartParams() {
+          return state.turnStartParams;
+        },
+        close: () => new Promise((closeResolve) => {
+          for (const client of wss.clients) client.terminate();
+          wss.close(() => server.close(closeResolve));
+          setTimeout(closeResolve, 1000);
+        })
+      });
+    });
+  });
+}
+
 function runNodeScript(scriptPath, env) {
   return new Promise((resolve, reject) => {
+    const childEnv = { ...process.env };
+    for (const key of [
+      "LOOPILOT_ACCEPT_MESSAGE",
+      "LOOPILOT_ACCEPT_MODEL",
+      "LOOPILOT_ACCEPT_PORT",
+      "LOOPILOT_ACCEPT_PUBLIC_URL_TIMEOUT_MS",
+      "LOOPILOT_ACCEPT_REASONING",
+      "LOOPILOT_ACCEPT_SESSION_ID",
+      "LOOPILOT_ACCEPT_USE_LATEST",
+      "LOOPILOT_FAKE_TUNNEL_URL",
+      "LOOPILOT_TEST_BAD_PAIR_TOKEN"
+    ]) {
+      delete childEnv[key];
+    }
     const child = spawn(process.execPath, [path.join(projectRoot, scriptPath)], {
       cwd: projectRoot,
       env: {
-        ...process.env,
+        ...childEnv,
         ...env
       },
       stdio: ["ignore", "pipe", "pipe"],

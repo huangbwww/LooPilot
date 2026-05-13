@@ -39,6 +39,50 @@ test("app-server bridge starts a turn and answers approval requests", { timeout:
   }
 });
 
+test("app-server bridge routes server requests to the latest turn callback", { timeout: 10000 }, async () => {
+  const port = 49100 + Math.floor(Math.random() * 1000);
+  process.env.LOOPILOT_CODEX_APP_SERVER_PORT = String(port);
+  const fake = await startFakeAppServer(port);
+  const appServer = await import(`../server/codexAppServer.mjs?case=${Date.now()}`);
+  const firstUpdates = [];
+  const secondUpdates = [];
+
+  try {
+    const first = appServer.startTurnViaAppServer({
+      session: {
+        id: "019e1c98-c592-7dc2-a684-ffec77c153b8",
+        cwd: process.cwd()
+      },
+      message: "first",
+      model: "gpt-5.5",
+      reasoning: "high",
+      onUpdate: (update) => firstUpdates.push(update)
+    });
+    await waitFor(() => firstUpdates.some((update) => update.serverRequestId === "approval-1"), 5000);
+    assert.equal(appServer.respondToServerRequest("approval-1", "approved"), true);
+    await first;
+
+    const firstCount = firstUpdates.length;
+    const second = appServer.startTurnViaAppServer({
+      session: {
+        id: "019e1c98-c592-7dc2-a684-ffec77c153b8",
+        cwd: process.cwd()
+      },
+      message: "second",
+      model: "gpt-5.5",
+      reasoning: "high",
+      onUpdate: (update) => secondUpdates.push(update)
+    });
+    await waitFor(() => secondUpdates.some((update) => update.serverRequestId === "approval-1"), 5000);
+    assert.equal(firstUpdates.length, firstCount);
+    assert.equal(appServer.respondToServerRequest("approval-1", "approved"), true);
+    await second;
+  } finally {
+    appServer.shutdownAppServer();
+    await fake.close();
+  }
+});
+
 function startFakeAppServer(port) {
   return new Promise((resolve) => {
     const state = {

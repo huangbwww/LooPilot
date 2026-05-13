@@ -11,10 +11,12 @@ let socket = null;
 let nextId = 1;
 let initialized = false;
 let connecting = null;
+let currentOnUpdate = null;
 const pending = new Map();
 const serverRequests = new Map();
 
 export async function startTurnViaAppServer({ session, message, model, reasoning, onUpdate }) {
+  currentOnUpdate = onUpdate;
   await ensureConnected(onUpdate);
   await request("thread/resume", {
     threadId: session.id,
@@ -43,13 +45,23 @@ export function respondToServerRequest(requestId, decision) {
   return true;
 }
 
+export function shutdownAppServer() {
+  socket?.close?.();
+  socket = null;
+  initialized = false;
+  if (processHandle) {
+    processHandle.kill();
+    processHandle = null;
+  }
+}
+
 async function ensureConnected(onUpdate) {
   if (socket?.readyState === WebSocket.OPEN && initialized) return;
   if (connecting) return connecting;
   connecting = (async () => {
     await ensureProcess();
     socket = new WebSocket(APP_SERVER_URL);
-    socket.on("message", (data) => handleMessage(data, onUpdate));
+    socket.on("message", (data) => handleMessage(data, currentOnUpdate || onUpdate));
     socket.on("close", () => {
       initialized = false;
       socket = null;
