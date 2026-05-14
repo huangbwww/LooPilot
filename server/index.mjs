@@ -17,7 +17,7 @@ import {
   getCodexHome,
   getSessionDetail,
   getWatchedPaths,
-  listSessions,
+  listSessionPage,
   resolveAction
 } from "./codexStore.mjs";
 
@@ -83,8 +83,11 @@ app.get("/api/system", (_req, res) => {
   });
 });
 
-app.get("/api/sessions", (_req, res) => {
-  res.json({ sessions: listSessions() });
+app.get("/api/sessions", (req, res) => {
+  res.json(listSessionPage({
+    limit: req.query?.limit,
+    offset: req.query?.offset
+  }));
 });
 
 app.get("/api/sessions/:id", (req, res) => {
@@ -163,7 +166,7 @@ if (args.has("--prod")) {
 }
 
 wss.on("connection", (socket) => {
-  socket.send(JSON.stringify({ type: "snapshot", sessions: listSessions() }));
+  socket.send(JSON.stringify({ type: "snapshot", ...listSessionPage({ limit: 40 }) }));
 });
 
 server.on("upgrade", (request, socket, head) => {
@@ -187,7 +190,7 @@ let broadcastTimer = null;
 watcher.on("all", () => {
   clearTimeout(broadcastTimer);
   broadcastTimer = setTimeout(() => {
-    broadcast({ type: "snapshot", sessions: listSessions() });
+    broadcast({ type: "snapshot", ...listSessionPage({ limit: 40 }) });
   }, 120);
 });
 

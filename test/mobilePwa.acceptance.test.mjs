@@ -108,8 +108,11 @@ test("critical mobile actions remain reachable from the authenticated workspace"
   assert.match(app, /exchangePairingCode\(credential, nextBackendUrl \|\| backendUrl\)/);
   assert.match(app, /fetch\(apiUrl\("\/api\/pair", backendUrl\)/);
   assert.match(app, /new WebSocket\(liveUrl\(backendUrl, authToken\)\)/);
-  assert.match(app, /if \(payload\.type === "snapshot"\) \{[\s\S]+loadDetail\(selectedId, authToken, backendUrl\)\.then\(setDetail\);[\s\S]+}/);
+  assert.match(app, /const sessionPageSize = 40/);
+  assert.match(app, /setSessions\(\(current\) => mergeSessionLists\(snapshotSessions, current\)\)/);
+  assert.match(app, /loadDetail\(selectedIdRef\.current, authToken, backendUrl\)\.then\(setDetail\)/);
   assert.match(app, /fetchSessions\(authToken, backendUrl\)/);
+  assert.match(app, /fetchSessions\(authToken, backendUrl, sessionPaging\.nextOffset\)/);
   assert.match(app, /loadDetail\(selected\.id, authToken, backendUrl\)/);
   assert.match(app, /notificationPermission === "default"/);
   assert.match(app, /onClick=\{onEnableNotifications\}/);
@@ -118,6 +121,8 @@ test("critical mobile actions remain reachable from the authenticated workspace"
   assert.match(app, /onClick=\{onSignOut\}/);
 
   assert.match(app, /<SessionList[\s\S]+onSelect=\{\(id\) => \{[\s\S]+setDrawerOpen\(false\);/);
+  assert.match(app, /hasMore=\{sessionPaging\.hasMore\}/);
+  assert.match(app, /function mergeSessionLists\(primary, secondary\)/);
   assert.match(app, /const approvalPolicyOptions = \[/);
   assert.match(app, /const approvalScopeOptions = \[/);
   assert.match(app, /const \[approvalPolicy, setApprovalPolicy\] = useState\(approvalPolicyOptions\[0\]\.value\)/);
@@ -159,6 +164,8 @@ test("timeline renders markdown, local images, and compact tool summaries", () =
 
 test("session drawer groups conversations by project like Codex desktop", () => {
   assert.match(app, /const groups = groupSessionsByProject\(sessions\)/);
+  assert.match(app, /onScroll=\{handleScroll\}/);
+  assert.match(app, /className="load-more-sessions"/);
   assert.match(app, /<section className="project-group" key=\{group\.key\}>/);
   assert.match(app, /<div className="project-header">[\s\S]+<Folder size=\{15\} \/>[\s\S]+<span>\{group\.name\}<\/span>/);
   assert.match(app, /function groupSessionsByProject\(sessions\)/);
@@ -168,6 +175,7 @@ test("session drawer groups conversations by project like Codex desktop", () => 
 
   assert.match(css, /\.project-group\s*\{/);
   assert.match(css, /\.project-header\s*\{/);
+  assert.match(css, /\.load-more-sessions\s*\{/);
   assert.match(cssBlock(".session-row"), /min-height:\s*62px/);
 });
 
@@ -176,6 +184,10 @@ test("mobile layout clamps loaded conversation content to the viewport", () => {
   assert.match(cssBlock(".app-shell"), /max-width:\s*100vw/);
   assert.match(cssBlock(".workspace"), /overflow:\s*hidden/);
   assert.match(cssBlock(".session-surface"), /max-width:\s*100vw/);
+  assert.match(cssBlock(".session-surface"), /z-index:\s*1/);
+  assert.match(css, /\.composer\s*\{[\s\S]*z-index:\s*40[\s\S]*overflow:\s*visible/);
+  assert.match(cssBlock(".option-list"), /z-index:\s*120/);
+  assert.match(cssBlock(".option-list"), /max-height:\s*min\(320px,\s*42vh\)/);
   assert.match(cssBlock(".timeline"), /width:\s*100%/);
   assert.match(cssBlock(".timeline-item"), /overflow:\s*hidden/);
   assert.match(cssBlock(".markdown-body code"), /overflow-wrap:\s*anywhere/);

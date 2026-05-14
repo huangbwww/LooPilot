@@ -106,10 +106,14 @@ test("local server exposes token-protected sessions, websocket sync, and queue s
     const sessions = await requestJson(port, "/api/sessions", token);
     assert.equal(sessions.status, 200);
     assert.equal(sessions.body.sessions[0].id, fixture.sessionId);
+    assert.equal(sessions.body.total, 1);
+    assert.equal(sessions.body.hasMore, false);
+    assert.equal(sessions.body.nextOffset, 1);
 
     const snapshot = await websocketSnapshot(port, token);
     assert.equal(snapshot.type, "snapshot");
     assert.equal(snapshot.sessions[0].id, fixture.sessionId);
+    assert.equal(snapshot.hasMore, false);
 
     const send = await requestJson(port, `/api/sessions/${fixture.sessionId}/messages`, token, {
       method: "POST",

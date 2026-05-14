@@ -12,6 +12,7 @@ const JOBS_DIR = path.join(APP_STATE_DIR, "jobs");
 
 const MAX_PREVIEW_CHARS = 320;
 const MAX_DETAIL_ITEMS = 900;
+const MAX_SESSION_LIMIT = 120;
 
 export function getCodexHome() {
   return CODEX_HOME;
@@ -26,7 +27,46 @@ export function ensureStateDirs() {
   fs.mkdirSync(JOBS_DIR, { recursive: true });
 }
 
-export function listSessions() {
+export function listSessions(options = {}) {
+  const limit = normalizeLimit(options.limit);
+  const offset = normalizeOffset(options.offset);
+  const summaries = sortedSessionSummaries();
+  const page = limit ? summaries.slice(offset, offset + limit) : summaries.slice(offset);
+  const sessions = page.map((summary) => hydrateSessionSummary(summary));
+  sessions.total = summaries.length;
+  sessions.hasMore = limit ? offset + sessions.length < summaries.length : false;
+  sessions.nextOffset = offset + sessions.length;
+  return sessions;
+}
+
+export function listSessionPage(options = {}) {
+  const sessions = listSessions(options);
+  return {
+    sessions,
+    total: sessions.total || sessions.length,
+    hasMore: Boolean(sessions.hasMore),
+    nextOffset: sessions.nextOffset || sessions.length
+  };
+}
+
+export function getSessionDetail(id) {
+  const summary = sortedSessionSummaries().find((item) => item.id === id);
+  if (!summary?.path) return summary ? hydrateSessionSummary(summary) : null;
+  const parsed = parseSessionFile(summary.path, { detail: true });
+  const outbox = readOutbox(id);
+  const pendingAction = visiblePendingAction(parsed.pendingAction, outbox) || pendingActionFromJobs(outbox);
+  return {
+    ...summary,
+    ...parsed,
+    title: readableTitle(summary.title, parsed),
+    isSubagent: parsed.threadSource === "subagent",
+    status: parsed.status === "waiting" && !pendingAction ? "idle" : parsed.status,
+    pendingAction,
+    outbox
+  };
+}
+
+function sortedSessionSummaries() {
   const index = readSessionIndex();
   const files = indexSessionFiles();
   const summaries = new Map();
@@ -53,44 +93,30 @@ export function listSessions() {
   }
 
   return [...summaries.values()]
-    .map((summary) => {
-      const parsed = summary.path ? parseSessionFile(summary.path, { detail: false }) : null;
-      const outbox = readOutbox(summary.id);
-      const pendingAction = visiblePendingAction(parsed?.pendingAction, outbox) || pendingActionFromJobs(outbox);
-      return {
-        ...summary,
-        title: readableTitle(summary.title, parsed),
-        cwd: parsed?.cwd,
-        model: parsed?.model,
-        reasoning: parsed?.reasoning,
-        threadSource: parsed?.threadSource || "user",
-        parentThreadId: parsed?.parentThreadId || "",
-        agentNickname: parsed?.agentNickname || "",
-        isSubagent: parsed?.threadSource === "subagent",
-        status: parsed?.status === "waiting" && !pendingAction ? "idle" : parsed?.status || "idle",
-        progress: parsed?.progress || [],
-        pendingAction,
-        lastOutput: parsed?.lastOutput || "",
-        messageCount: parsed?.messageCount || 0,
-        toolCount: parsed?.toolCount || 0,
-        updatedAt: parsed?.updatedAt || summary.updatedAt
-      };
-    })
     .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
 }
 
-export function getSessionDetail(id) {
-  const session = listSessions().find((item) => item.id === id);
-  if (!session?.path) return session || null;
-  const parsed = parseSessionFile(session.path, { detail: true });
-  const outbox = readOutbox(id);
-  const pendingAction = visiblePendingAction(parsed.pendingAction, outbox) || pendingActionFromJobs(outbox);
+function hydrateSessionSummary(summary) {
+  const parsed = summary.path ? parseSessionFile(summary.path, { detail: false }) : null;
+  const outbox = readOutbox(summary.id);
+  const pendingAction = visiblePendingAction(parsed?.pendingAction, outbox) || pendingActionFromJobs(outbox);
   return {
-    ...session,
-    ...parsed,
-    status: parsed.status === "waiting" && !pendingAction ? "idle" : parsed.status,
+    ...summary,
+    title: readableTitle(summary.title, parsed),
+    cwd: parsed?.cwd,
+    model: parsed?.model,
+    reasoning: parsed?.reasoning,
+    threadSource: parsed?.threadSource || "user",
+    parentThreadId: parsed?.parentThreadId || "",
+    agentNickname: parsed?.agentNickname || "",
+    isSubagent: parsed?.threadSource === "subagent",
+    status: parsed?.status === "waiting" && !pendingAction ? "idle" : parsed?.status || "idle",
+    progress: parsed?.progress || [],
     pendingAction,
-    outbox
+    lastOutput: parsed?.lastOutput || "",
+    messageCount: parsed?.messageCount || 0,
+    toolCount: parsed?.toolCount || 0,
+    updatedAt: parsed?.updatedAt || summary.updatedAt
   };
 }
 
@@ -495,6 +521,19 @@ function safeStat(filePath) {
   } catch {
     return null;
   }
+}
+
+function normalizeLimit(value) {
+  if (value === undefined || value === null || value === "") return 0;
+  const limit = Number(value);
+  if (!Number.isFinite(limit) || limit <= 0) return 0;
+  return Math.min(Math.floor(limit), MAX_SESSION_LIMIT);
+}
+
+function normalizeOffset(value) {
+  const offset = Number(value);
+  if (!Number.isFinite(offset) || offset <= 0) return 0;
+  return Math.floor(offset);
 }
 
 function cryptoId() {

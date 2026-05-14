@@ -42,6 +42,7 @@ const approvalScopeOptions = [
 ];
 const storedBackendKey = "loopilot.backendUrl";
 const storedTokenKey = "loopilot.authToken";
+const sessionPageSize = 40;
 
 function App() {
   const nativeShell = isNativeShell();
@@ -49,6 +50,7 @@ function App() {
   const [authToken, setAuthToken] = useState(() => readInitialToken());
   const [systemInfo, setSystemInfo] = useState(null);
   const [sessions, setSessions] = useState([]);
+  const [sessionPaging, setSessionPaging] = useState({ nextOffset: 0, hasMore: false, loading: false });
   const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -58,11 +60,16 @@ function App() {
   const [approvalPolicy, setApprovalPolicy] = useState(approvalPolicyOptions[0].value);
   const [notificationPermission, setNotificationPermission] = useState(() => getNotificationPermission());
   const notifiedActions = useRef(new Set());
+  const selectedIdRef = useRef("");
   const selected = useMemo(
     () => sessions.find((session) => session.id === selectedId) || sessions[0],
     [sessions, selectedId]
   );
   const waitingCount = sessions.filter((session) => session.status === "waiting").length;
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
 
   useEffect(() => {
     if (!backendUrl) {
@@ -86,9 +93,13 @@ function App() {
 
   useEffect(() => {
     if (!authToken || !backendUrl) return;
-    fetchSessions(authToken, backendUrl).then((items) => {
-      setSessions(items);
-      setSelectedId((current) => current || items[0]?.id || "");
+    setSessionPaging((current) => ({ ...current, loading: true }));
+    fetchSessions(authToken, backendUrl).then((page) => {
+      setSessions(page.sessions);
+      setSessionPaging({ nextOffset: page.nextOffset, hasMore: page.hasMore, loading: false });
+      setSelectedId((current) => current || page.sessions[0]?.id || "");
+    }).catch(() => {
+      setSessionPaging((current) => ({ ...current, loading: false }));
     });
 
     const socket = new WebSocket(liveUrl(backendUrl, authToken));
@@ -98,16 +109,24 @@ function App() {
     socket.onmessage = (event) => {
       const payload = JSON.parse(event.data);
       if (payload.type === "snapshot") {
-        setSessions(payload.sessions || []);
-        setSelectedId((current) => current || payload.sessions?.[0]?.id || "");
-        if (selectedId) loadDetail(selectedId, authToken, backendUrl).then(setDetail);
+        const snapshotSessions = payload.sessions || [];
+        setSessions((current) => mergeSessionLists(snapshotSessions, current));
+        setSessionPaging((current) => ({
+          ...current,
+          nextOffset: Math.max(current.nextOffset, payload.nextOffset || snapshotSessions.length),
+          hasMore: payload.total
+            ? Math.max(current.nextOffset, payload.nextOffset || snapshotSessions.length) < payload.total
+            : Boolean(payload.hasMore)
+        }));
+        setSelectedId((current) => current || snapshotSessions[0]?.id || "");
+        if (selectedIdRef.current) loadDetail(selectedIdRef.current, authToken, backendUrl).then(setDetail);
       }
       if (payload.type === "outbox" || payload.type === "action" || payload.type === "bridge") {
-        loadDetail(selectedId, authToken, backendUrl).then(setDetail);
+        if (selectedIdRef.current) loadDetail(selectedIdRef.current, authToken, backendUrl).then(setDetail);
       }
     };
     return () => socket.close();
-  }, [authToken, backendUrl, selectedId]);
+  }, [authToken, backendUrl]);
 
   useEffect(() => {
     if (!selected?.id || !backendUrl) return;
@@ -129,6 +148,18 @@ function App() {
     setNotificationPermission(permission);
   }
 
+  async function loadMoreSessions() {
+    if (!authToken || !backendUrl || sessionPaging.loading || !sessionPaging.hasMore) return;
+    setSessionPaging((current) => ({ ...current, loading: true }));
+    try {
+      const page = await fetchSessions(authToken, backendUrl, sessionPaging.nextOffset);
+      setSessions((current) => mergeSessionLists(current, page.sessions));
+      setSessionPaging({ nextOffset: page.nextOffset, hasMore: page.hasMore, loading: false });
+    } catch {
+      setSessionPaging((current) => ({ ...current, loading: false }));
+    }
+  }
+
   const current = detail?.id === selected?.id ? detail : selected;
 
   return (
@@ -138,6 +169,9 @@ function App() {
         <SessionList
           sessions={sessions}
           selectedId={selected?.id}
+          hasMore={sessionPaging.hasMore}
+          loadingMore={sessionPaging.loading}
+          onLoadMore={loadMoreSessions}
           onSelect={(id) => {
             setSelectedId(id);
             setDrawerOpen(false);
@@ -158,6 +192,7 @@ function App() {
             localStorage.removeItem(storedTokenKey);
             setAuthToken("");
             setSessions([]);
+            setSessionPaging({ nextOffset: 0, hasMore: false, loading: false });
             setDetail(null);
           }}
         />
@@ -265,11 +300,15 @@ function SidebarHeader({ connection, waitingCount, onClose }) {
   );
 }
 
-function SessionList({ sessions, selectedId, onSelect }) {
+function SessionList({ sessions, selectedId, hasMore, loadingMore, onLoadMore, onSelect }) {
   const [expandedSubagents, setExpandedSubagents] = useState({});
   const groups = groupSessionsByProject(sessions);
+  function handleScroll(event) {
+    const element = event.currentTarget;
+    if (element.scrollHeight - element.scrollTop - element.clientHeight < 180) onLoadMore();
+  }
   return (
-    <div className="session-list">
+    <div className="session-list" onScroll={handleScroll}>
       {groups.map((group) => {
         const primarySessions = group.sessions.filter((session) => !session.isSubagent);
         const subagents = group.sessions.filter((session) => session.isSubagent);
@@ -310,6 +349,11 @@ function SessionList({ sessions, selectedId, onSelect }) {
           </section>
         );
       })}
+      {(hasMore || loadingMore) && (
+        <button className="load-more-sessions" type="button" disabled={loadingMore} onClick={onLoadMore}>
+          {loadingMore ? "加载中..." : "加载更早对话"}
+        </button>
+      )}
     </div>
   );
 }
@@ -868,10 +912,19 @@ function StatusPill({ state, compact }) {
   );
 }
 
-async function fetchSessions(authToken, backendUrl) {
-  const response = await authedFetch("/api/sessions", authToken, {}, backendUrl);
+async function fetchSessions(authToken, backendUrl, offset = 0) {
+  const params = new URLSearchParams({
+    limit: String(sessionPageSize),
+    offset: String(offset)
+  });
+  const response = await authedFetch(`/api/sessions?${params}`, authToken, {}, backendUrl);
   const data = await response.json();
-  return data.sessions || [];
+  return {
+    sessions: data.sessions || [],
+    nextOffset: data.nextOffset || offset + (data.sessions || []).length,
+    total: data.total || 0,
+    hasMore: Boolean(data.hasMore)
+  };
 }
 
 async function loadDetail(id, authToken, backendUrl) {
@@ -888,6 +941,17 @@ function authedFetch(url, authToken, options = {}, backendUrl = "") {
       Authorization: `Bearer ${authToken}`
     }
   });
+}
+
+function mergeSessionLists(primary, secondary) {
+  const seen = new Set();
+  const merged = [];
+  for (const session of [...primary, ...secondary]) {
+    if (!session?.id || seen.has(session.id)) continue;
+    seen.add(session.id);
+    merged.push(session);
+  }
+  return merged;
 }
 
 function apiUrl(pathname, backendUrl) {

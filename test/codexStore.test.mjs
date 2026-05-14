@@ -145,12 +145,28 @@ test("lists Codex sessions from session_index and rollout files", () => {
   const sessions = store.listSessions();
   const session = sessions.find((item) => item.id === sessionId);
   assert.equal(sessions.length, 4);
+  assert.equal(sessions.total, 4);
+  assert.equal(sessions.hasMore, false);
   assert.equal(session.title, "Test Session");
   assert.equal(session.status, "waiting");
   assert.equal(session.model, "gpt-5.5");
   assert.equal(session.reasoning, "high");
   assert.equal(session.messageCount, 2);
   assert.equal(session.toolCount, 2);
+});
+
+test("paginates session summaries before hydrating details", () => {
+  const firstPage = store.listSessionPage({ limit: 2 });
+  assert.equal(firstPage.sessions.length, 2);
+  assert.equal(firstPage.total, 4);
+  assert.equal(firstPage.hasMore, true);
+  assert.equal(firstPage.nextOffset, 2);
+
+  const secondPage = store.listSessionPage({ limit: 2, offset: 2 });
+  assert.equal(secondPage.sessions.length, 2);
+  assert.equal(secondPage.hasMore, false);
+  assert.equal(secondPage.nextOffset, 4);
+  assert.notEqual(firstPage.sessions[0].id, secondPage.sessions[0].id);
 });
 
 test("outbox records are ordered by timestamp across message action and job files", () => {
