@@ -232,7 +232,7 @@ function parseSessionFile(filePath, { detail }) {
         kind: "tool",
         role: "tool",
         title: name,
-        text: prettyArgs(item.arguments || item.call?.arguments),
+        text: summarizeToolCall(name, item.arguments || item.call?.arguments),
         at: row.timestamp
       });
     }
@@ -416,6 +416,31 @@ function prettyArgs(value) {
     }
   }
   return JSON.stringify(value, null, 2);
+}
+
+function summarizeToolCall(name, value) {
+  const args = parseArgs(value);
+  if (!args || typeof args !== "object") return prettyArgs(value);
+
+  if (name === "shell_command") {
+    const command = args.command || args.cmd || args.script;
+    const cwd = args.workdir || args.cwd;
+    return [
+      command ? `运行命令：${command}` : "运行 shell 命令",
+      cwd ? `目录：${cwd}` : "",
+      args.timeout_ms ? `超时：${args.timeout_ms}ms` : ""
+    ].filter(Boolean).join("\n");
+  }
+
+  if (name === "apply_patch") return "修改文件";
+  if (name === "view_image") return args.path ? `查看图片：${args.path}` : "查看图片";
+  if (name.includes("browser") || name.includes("screenshot")) return `浏览器操作：${name}`;
+  if (name === "request_user_input") return "等待用户选择或输入";
+  if (name === "request_plugin_install") return "请求安装插件或连接器";
+
+  const keys = Object.keys(args).slice(0, 4);
+  if (!keys.length) return "调用工具";
+  return [`调用工具：${name}`, `参数：${keys.join(", ")}`].join("\n");
 }
 
 function parseArgs(value) {

@@ -309,7 +309,7 @@ function SessionSurface({ session, authToken }) {
       {session.pendingAction && <ActionPrompt session={session} authToken={authToken} />}
       <div className="timeline">
         {(session.timeline || []).map((item, index) => (
-          <TimelineItem key={`${item.id}-${index}`} item={item} />
+          <TimelineItem key={`${item.id}-${index}`} item={item} sessionId={session.id} authToken={authToken} />
         ))}
       </div>
       {session.outbox?.length > 0 && (
@@ -416,16 +416,243 @@ function ActionPrompt({ session, authToken }) {
   );
 }
 
-function TimelineItem({ item }) {
+function TimelineItem({ item, sessionId, authToken }) {
+  const isTool = item.kind === "tool";
+  const isToolOutput = item.kind === "tool-output";
   return (
     <article className={`timeline-item ${item.role}`}>
       <div className="item-head">
         <span>{item.title}</span>
         <time>{formatTime(item.at)}</time>
       </div>
-      <p>{item.text}</p>
+      {isTool && <pre className="tool-summary">{item.text}</pre>}
+      {isToolOutput && (
+        <details className="tool-details">
+          <summary>查看工具输出</summary>
+          <pre className="tool-summary">{item.text}</pre>
+        </details>
+      )}
+      {!isTool && !isToolOutput && <MarkdownContent text={item.text} sessionId={sessionId} authToken={authToken} />}
     </article>
   );
+}
+
+function MarkdownContent({ text, sessionId, authToken }) {
+  return <div className="markdown-body">{renderMarkdownBlocks(text || "", sessionId, authToken)}</div>;
+}
+
+function renderMarkdownBlocks(text, sessionId, authToken) {
+  const lines = String(text).replace(/\r\n/g, "\n").split("\n");
+  const blocks = [];
+  let paragraph = [];
+  let list = [];
+  let quote = [];
+  let code = null;
+
+  function flushParagraph() {
+    if (!paragraph.length) return;
+    blocks.push(<p key={`p-${blocks.length}`}>{renderInline(paragraph.join("\n"), sessionId, authToken, `p-${blocks.length}`)}</p>);
+    paragraph = [];
+  }
+
+  function flushList() {
+    if (!list.length) return;
+    blocks.push(
+      <ul key={`ul-${blocks.length}`}>
+        {list.map((item, index) => <li key={index}>{renderInline(item, sessionId, authToken, `li-${blocks.length}-${index}`)}</li>)}
+      </ul>
+    );
+    list = [];
+  }
+
+  function flushQuote() {
+    if (!quote.length) return;
+    blocks.push(<blockquote key={`q-${blocks.length}`}>{renderInline(quote.join("\n"), sessionId, authToken, `q-${blocks.length}`)}</blockquote>);
+    quote = [];
+  }
+
+  function flushLoose() {
+    flushParagraph();
+    flushList();
+    flushQuote();
+  }
+
+  for (const line of lines) {
+    const fence = line.match(/^```(\w+)?\s*$/);
+    if (fence) {
+      if (code) {
+        blocks.push(
+          <pre className="markdown-code" key={`code-${blocks.length}`}>
+            <code>{code.lines.join("\n")}</code>
+          </pre>
+        );
+        code = null;
+      } else {
+        flushLoose();
+        code = { language: fence[1] || "", lines: [] };
+      }
+      continue;
+    }
+    if (code) {
+      code.lines.push(line);
+      continue;
+    }
+
+    if (!line.trim()) {
+      flushLoose();
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      flushLoose();
+      const Tag = `h${heading[1].length + 2}`;
+      blocks.push(<Tag key={`h-${blocks.length}`}>{renderInline(heading[2], sessionId, authToken, `h-${blocks.length}`)}</Tag>);
+      continue;
+    }
+
+    const listItem = line.match(/^\s*(?:[-*]|\d+\.)\s+(.+)$/);
+    if (listItem) {
+      flushParagraph();
+      flushQuote();
+      list.push(listItem[1]);
+      continue;
+    }
+
+    const quoteLine = line.match(/^>\s?(.*)$/);
+    if (quoteLine) {
+      flushParagraph();
+      flushList();
+      quote.push(quoteLine[1]);
+      continue;
+    }
+
+    flushList();
+    flushQuote();
+    paragraph.push(line);
+  }
+
+  if (code) {
+    blocks.push(
+      <pre className="markdown-code" key={`code-${blocks.length}`}>
+        <code>{code.lines.join("\n")}</code>
+      </pre>
+    );
+  }
+  flushLoose();
+  return blocks.length ? blocks : null;
+}
+
+function renderInline(text, sessionId, authToken, keyPrefix) {
+  const pattern = /(!?\[([^\]]*)\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\))|(`([^`]+)`)|(\*\*([^*]+)\*\*)/g;
+  const parts = [];
+  let cursor = 0;
+  let match = null;
+
+  function pushText(value) {
+    if (!value) return;
+    const pieces = value.split("\n");
+    pieces.forEach((piece, index) => {
+      if (index > 0) parts.push(<br key={`${keyPrefix}-br-${parts.length}`} />);
+      if (piece) parts.push(piece);
+    });
+  }
+
+  while ((match = pattern.exec(text)) !== null) {
+    pushText(text.slice(cursor, match.index));
+    if (match[1]?.startsWith("!")) {
+      parts.push(<ImageBlock key={`${keyPrefix}-img-${parts.length}`} src={match[3]} alt={match[2]} sessionId={sessionId} authToken={authToken} />);
+    } else if (match[1]) {
+      const href = safeHref(match[3]);
+      parts.push(href
+        ? <a key={`${keyPrefix}-a-${parts.length}`} href={href} target="_blank" rel="noreferrer">{match[2] || match[3]}</a>
+        : match[2]);
+    } else if (match[4]) {
+      parts.push(<code key={`${keyPrefix}-code-${parts.length}`}>{match[5]}</code>);
+    } else if (match[6]) {
+      parts.push(<strong key={`${keyPrefix}-strong-${parts.length}`}>{match[7]}</strong>);
+    }
+    cursor = match.index + match[0].length;
+  }
+  pushText(text.slice(cursor));
+  return parts;
+}
+
+function ImageBlock({ src, alt, sessionId, authToken }) {
+  const [objectUrl, setObjectUrl] = useState("");
+  const [failed, setFailed] = useState(false);
+  const imageSrc = String(src || "").trim();
+  const directSrc = isDirectImageSrc(imageSrc);
+
+  useEffect(() => {
+    setFailed(false);
+    setObjectUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return "";
+    });
+  }, [imageSrc]);
+
+  useEffect(() => {
+    if (!imageSrc || directSrc || !sessionId) return undefined;
+    let cancelled = false;
+    const controller = new AbortController();
+    fetch(`/api/sessions/${encodeURIComponent(sessionId)}/media?path=${encodeURIComponent(imagePathFromMarkdown(imageSrc))}`, {
+      headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+      signal: controller.signal
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error("Image request failed");
+        return response.blob();
+      })
+      .then((blob) => {
+        if (cancelled) return;
+        const nextUrl = URL.createObjectURL(blob);
+        setObjectUrl(nextUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [imageSrc, directSrc, sessionId, authToken]);
+
+  useEffect(() => () => {
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+  }, [objectUrl]);
+
+  if (!imageSrc) return null;
+  if (directSrc) return <img className="markdown-image" src={imageSrc} alt={alt || ""} loading="lazy" referrerPolicy="no-referrer" />;
+  if (failed) return <span className="image-error">图片无法加载：{imageSrc}</span>;
+  return objectUrl
+    ? <img className="markdown-image" src={objectUrl} alt={alt || ""} loading="lazy" />
+    : <span className="image-loading">图片加载中...</span>;
+}
+
+function safeHref(value) {
+  const href = String(value || "").trim();
+  if (/^(https?:|mailto:)/i.test(href)) return href;
+  return "";
+}
+
+function isDirectImageSrc(value) {
+  return /^https:\/\//i.test(value);
+}
+
+function imagePathFromMarkdown(value) {
+  let input = String(value || "").trim();
+  try {
+    input = decodeURIComponent(input);
+  } catch {
+    return "";
+  }
+  if (/^file:\/\/\//i.test(input)) {
+    input = input.replace(/^file:\/\/\//i, "");
+    if (/^[A-Za-z]:\//.test(input)) return input.replace(/\//g, "\\");
+    return `/${input}`;
+  }
+  return input.replace(/^file:\/\//i, "");
 }
 
 function Composer({ session, authToken, model, reasoning, setModel, setReasoning, approvalPolicy, setApprovalPolicy, onSent }) {

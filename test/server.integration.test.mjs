@@ -78,9 +78,24 @@ test("local server exposes token-protected sessions, websocket sync, and queue s
     const unauthorized = await requestJson(port, "/api/sessions");
     assert.equal(unauthorized.status, 401);
 
+    const unauthorizedImage = await requestText(port, `/api/sessions/${fixture.sessionId}/media?path=${encodeURIComponent(fixture.imagePath)}`);
+    assert.equal(unauthorizedImage.status, 401);
+
     const system = await requestJson(port, "/api/system", token);
     assert.equal(system.status, 200);
     assert.equal(system.body.codexHome, fixture.codexHome);
+
+    const image = await requestText(port, `/api/sessions/${fixture.sessionId}/media?path=${encodeURIComponent(fixture.imagePath)}`, {
+      Authorization: `Bearer ${token}`
+    });
+    assert.equal(image.status, 200);
+    assert.equal(image.headers["content-type"], "image/png");
+    assert.ok(image.body.length > 0);
+
+    const unreferencedImage = await requestText(port, `/api/sessions/${fixture.sessionId}/media?path=${encodeURIComponent(fixture.unreferencedImagePath)}`, {
+      Authorization: `Bearer ${token}`
+    });
+    assert.equal(unreferencedImage.status, 403);
 
     const sessions = await requestJson(port, "/api/sessions", token);
     assert.equal(sessions.status, 200);
@@ -207,7 +222,7 @@ test("websocket broadcasts updated snapshots when rollout files change", async (
     ws = new WebSocket(`ws://127.0.0.1:${port}/live?token=${encodeURIComponent(token)}`);
     const initial = await websocketMessage(ws);
     assert.equal(initial.type, "snapshot");
-    assert.equal(initial.sessions[0].lastOutput, "ready");
+    assert.match(initial.sessions[0].lastOutput, /^ready/);
 
     await delay(1000);
     fs.appendFileSync(
@@ -341,7 +356,11 @@ function makeFixture() {
   const sessionId = "019e1c98-c592-7dc2-a684-ffec77c153b8";
   const rolloutDir = path.join(codexHome, "sessions", "2026", "05", "13");
   const rolloutPath = path.join(rolloutDir, `rollout-2026-05-13T09-00-00-${sessionId}.jsonl`);
+  const imagePath = path.join(root, "fixture.png");
+  const unreferencedImagePath = path.join(root, "secret.png");
   fs.mkdirSync(rolloutDir, { recursive: true });
+  fs.writeFileSync(imagePath, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64"));
+  fs.writeFileSync(unreferencedImagePath, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64"));
   fs.writeFileSync(
     path.join(codexHome, "session_index.jsonl"),
     `${JSON.stringify({ id: sessionId, thread_name: "Server Fixture", updated_at: "2026-05-13T01:00:00.000Z" })}\n`
@@ -357,11 +376,11 @@ function makeFixture() {
       JSON.stringify({
         timestamp: "2026-05-13T01:00:01.000Z",
         type: "response_item",
-        payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "ready" }] }
+        payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: `ready\n\n![fixture](${imagePath})` }] }
       })
     ].join("\n")
   );
-  return { root, codexHome, stateDir, sessionId, rolloutPath };
+  return { root, codexHome, stateDir, sessionId, rolloutPath, imagePath, unreferencedImagePath };
 }
 
 function requestJson(port, route, token = "", options = {}) {
@@ -418,6 +437,7 @@ function requestText(port, route, headers = {}) {
       response.on("end", () => {
         resolve({
           status: response.statusCode,
+          headers: response.headers,
           body
         });
       });
