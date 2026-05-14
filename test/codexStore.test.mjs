@@ -112,13 +112,23 @@ test("session detail includes timeline and pending user-input action", () => {
 });
 
 test("remote messages and action decisions are persisted to local state", () => {
-  const message = store.enqueueRemoteMessage(sessionId, "from phone", { model: "gpt-5.5", reasoning: "high" });
-  const action = store.resolveAction(sessionId, "ask-1", { decision: "approved", answers: { choice: ["A"] } });
+  const message = store.enqueueRemoteMessage(sessionId, "from phone", {
+    model: "gpt-5.5",
+    reasoning: "high",
+    approvalPolicy: "on-request"
+  });
+  const action = store.resolveAction(sessionId, "ask-1", {
+    decision: "approved",
+    answers: { choice: ["A"] },
+    scope: "session"
+  });
   const detail = store.getSessionDetail(sessionId);
   assert.equal(detail.outbox.some((item) => item.id === message.id && item.message === "from phone"), true);
   assert.equal(detail.outbox.some((item) => item.id === action.id && item.actionId === "ask-1"), true);
+  assert.equal(message.options.approvalPolicy, "on-request");
   assert.equal(action.decision, "approved");
   assert.deepEqual(action.answers, { choice: ["A"] });
+  assert.equal(action.scope, "session");
   assert.equal(detail.pendingAction, null);
   assert.equal(detail.status, "idle");
   assert.equal(store.listSessions().find((session) => session.id === sessionId).pendingAction, null);

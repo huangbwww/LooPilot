@@ -25,6 +25,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  overflow-x: hidden;
   background: var(--bg);
 }
 
@@ -122,9 +123,24 @@ button {
   padding: 10px;
 }
 
+.project-group {
+  margin-bottom: 12px;
+}
+
+.project-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .session-row {
   width: 100%;
-  min-height: 78px;
+  min-height: 62px;
   display: grid;
   grid-template-columns: 10px 1fr auto;
   align-items: start;
@@ -463,6 +479,28 @@ button {
   background: var(--green);
 }
 
+.permission-scope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.permission-scope button {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--panel);
+}
+
+.permission-scope button.selected {
+  border-color: rgba(242, 189, 93, 0.8);
+  color: #0f141b;
+  background: var(--yellow);
+}
+
 .answer-input {
   min-height: 38px;
   border: 1px solid var(--line);
@@ -518,31 +556,69 @@ button {
   margin: 0 auto 10px;
 }
 
-.control-row label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  height: 34px;
-  padding: 0 8px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-  color: var(--muted);
-}
-
-select {
-  max-width: 148px;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--text);
-}
-
 .input-row {
   max-width: 920px;
   margin: 0 auto;
   gap: 8px;
+}
+
+.option-menu {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.option-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  min-width: 122px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.option-trigger span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.option-list {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 60;
+  display: grid;
+  min-width: max(100%, 168px);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px;
+  background: #111820;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+}
+
+.option-menu:last-child .option-list {
+  right: 0;
+  left: auto;
+}
+
+.option-list button {
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 6px;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+}
+
+.option-list button.selected,
+.option-list button:hover {
+  background: var(--panel-2);
 }
 
 textarea {
@@ -614,5 +690,20 @@ textarea {
 
   .notice-badge {
     padding: 0 8px;
+  }
+
+  .control-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 1.18fr);
+    gap: 6px;
+    overflow: visible;
+  }
+
+  .option-trigger {
+    width: 100%;
+    min-width: 0;
+    gap: 5px;
+    padding: 0 7px;
+    font-size: 14px;
   }
 }

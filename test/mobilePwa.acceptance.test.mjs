@@ -108,16 +108,37 @@ test("critical mobile actions remain reachable from the authenticated workspace"
   assert.match(app, /onClick=\{onSignOut\}/);
 
   assert.match(app, /<SessionList[\s\S]+onSelect=\{\(id\) => \{[\s\S]+setDrawerOpen\(false\);/);
-  assert.match(app, /<select value=\{model\}/);
-  assert.match(app, /<select value=\{reasoning\}/);
+  assert.match(app, /const approvalPolicyOptions = \[/);
+  assert.match(app, /const approvalScopeOptions = \[/);
+  assert.match(app, /const \[approvalPolicy, setApprovalPolicy\] = useState\(approvalPolicyOptions\[0\]\.value\)/);
+  assert.match(app, /<OptionMenu icon=\{<Sparkles size=\{15\} \/>\} label="Model" value=\{model\}/);
+  assert.match(app, /<OptionMenu icon=\{<Settings2 size=\{15\} \/>\} label="Reasoning" value=\{reasoning\}/);
+  assert.match(app, /label="Approval"[\s\S]+value=\{approvalPolicy\}/);
+  assert.match(app, /className="permission-scope"/);
   assert.match(app, /<textarea[\s\S]+onChange=\{\(event\) => setMessage\(event\.target\.value\)\}/);
   assert.match(app, /const \[customAnswers, setCustomAnswers\] = useState\(\{\}\)/);
+  assert.match(app, /const \[approvalScope, setApprovalScope\] = useState\("turn"\)/);
+  assert.match(app, /const canChooseApprovalScope = session\.pendingAction\.method === "item\/permissions\/requestApproval"/);
   assert.match(app, /className="answer-input"/);
   assert.match(app, /placeholder="Custom answer"/);
-  assert.match(app, /body: JSON\.stringify\(typeof decision === "object" \? \{ \.\.\.decision, answers: mergedAnswers \} : \{ decision \}\)/);
+  assert.match(app, /\.\.\.\(canChooseApprovalScope \? \{ scope: approvalScope \} : \{\}\)/);
   assert.match(app, /disabled=\{sending \|\| !message\.trim\(\) \|\| !session\?\.id\}/);
-  assert.match(app, /body: JSON\.stringify\(\{ message, model, reasoning \}\)/);
+  assert.match(app, /body: JSON\.stringify\(\{ message, model, reasoning, approvalPolicy \}\)/);
   assert.match(app, /onSent=\{\(\) => current\?\.id && loadDetail\(current\.id, authToken\)\.then\(setDetail\)\}/);
+});
+
+test("session drawer groups conversations by project like Codex desktop", () => {
+  assert.match(app, /const groups = groupSessionsByProject\(sessions\)/);
+  assert.match(app, /<section className="project-group" key=\{group\.key\}>/);
+  assert.match(app, /<div className="project-header">[\s\S]+<Folder size=\{15\} \/>[\s\S]+<span>\{group\.name\}<\/span>/);
+  assert.match(app, /function groupSessionsByProject\(sessions\)/);
+  assert.match(app, /function projectKey\(cwd\)/);
+  assert.match(app, /function projectName\(cwd\)/);
+  assert.ok(app.includes("split(/[\\\\/]+/)"));
+
+  assert.match(css, /\.project-group\s*\{/);
+  assert.match(css, /\.project-header\s*\{/);
+  assert.match(cssBlock(".session-row"), /min-height:\s*62px/);
 });
 
 test("doctor reports pairing code status without exposing the code", () => {

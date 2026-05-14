@@ -3,6 +3,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import WebSocket from "ws";
+import { normalizeApprovalPolicy, normalizeApprovalScope } from "./options.mjs";
 
 const DEFAULT_PORT = Number(process.env.LOOPILOT_CODEX_APP_SERVER_PORT || 4331);
 const APP_SERVER_URL = `ws://127.0.0.1:${DEFAULT_PORT}`;
@@ -17,14 +18,15 @@ let currentOnUpdate = null;
 const pending = new Map();
 const serverRequests = new Map();
 
-export async function startTurnViaAppServer({ session, message, model, reasoning, onUpdate }) {
+export async function startTurnViaAppServer({ session, message, model, reasoning, approvalPolicy, onUpdate }) {
   currentOnUpdate = onUpdate;
   await ensureConnected(onUpdate);
+  const safeApprovalPolicy = normalizeApprovalPolicy(approvalPolicy);
   await request("thread/resume", {
     threadId: session.id,
     cwd: session.cwd || process.cwd(),
     model: model || null,
-    config: reasoning ? { model_reasoning_effort: reasoning } : null
+    config: turnConfig({ reasoning, approvalPolicy: safeApprovalPolicy })
   });
   return request("turn/start", {
     threadId: session.id,
@@ -155,9 +157,10 @@ export function responseForDecision(method, params, decision) {
   const approved = decision === "approved" || decision?.decision === "approved";
   if (method === "item/commandExecution/requestApproval") return { decision: approved ? "accept" : "decline" };
   if (method === "item/fileChange/requestApproval") return { decision: approved ? "accept" : "decline" };
+  if (method === "item/fileRead/requestApproval") return { decision: approved ? "accept" : "decline" };
   if (method === "execCommandApproval" || method === "applyPatchApproval") return { decision: approved ? "approved" : "denied" };
   if (method === "item/permissions/requestApproval") {
-    return approved ? { permissions: params.permissions || {}, scope: "turn" } : { permissions: {}, scope: "turn" };
+    return approved ? { permissions: params.permissions || {}, scope: normalizeApprovalScope(decision?.scope) || "turn" } : { permissions: {}, scope: "turn" };
   }
   if (method === "item/tool/requestUserInput") {
     const answers = {};
@@ -167,6 +170,13 @@ export function responseForDecision(method, params, decision) {
     return { answers };
   }
   return {};
+}
+
+function turnConfig({ reasoning, approvalPolicy }) {
+  const config = {};
+  if (reasoning) config.model_reasoning_effort = reasoning;
+  if (approvalPolicy) config.approval_policy = approvalPolicy;
+  return Object.keys(config).length ? config : null;
 }
 
 function requestStatus(method) {

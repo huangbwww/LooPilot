@@ -3,14 +3,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { appendBridgeJob, getSessionDetail } from "./codexStore.mjs";
 import { respondToServerRequest, startTurnViaAppServer } from "./codexAppServer.mjs";
+import { normalizeApprovalPolicy } from "./options.mjs";
 
 const activeJobs = new Map();
 const BRIDGE_MODE = process.env.LOOPILOT_BRIDGE_MODE || "app-server";
 const DISABLE_CLI_FALLBACK = process.env.LOOPILOT_DISABLE_CLI_FALLBACK === "1";
 const ENABLE_CLI_FALLBACK = process.env.LOOPILOT_ENABLE_CLI_FALLBACK === "1";
 
-export function dispatchRemoteMessage({ sessionId, message, model, reasoning, recordId, onUpdate }) {
+export function dispatchRemoteMessage({ sessionId, message, model, reasoning, approvalPolicy, recordId, onUpdate }) {
   const session = getSessionDetail(sessionId);
+  const safeApprovalPolicy = normalizeApprovalPolicy(approvalPolicy);
   if (!session?.id) {
     return {
       ok: false,
@@ -54,6 +56,7 @@ export function dispatchRemoteMessage({ sessionId, message, model, reasoning, re
     message,
     model,
     reasoning,
+    approvalPolicy: safeApprovalPolicy,
     onUpdate: (update) => {
       const record = {
         id: recordId,
@@ -88,7 +91,7 @@ export function dispatchRemoteMessage({ sessionId, message, model, reasoning, re
       activeJobs.delete(sessionId);
       return;
     }
-    dispatchViaCli({ session, sessionId, message, model, reasoning, recordId, onUpdate });
+    dispatchViaCli({ session, sessionId, message, model, reasoning, approvalPolicy: safeApprovalPolicy, recordId, onUpdate });
   });
 
   activeJobs.set(sessionId, { transport: "app-server" });
@@ -99,11 +102,12 @@ export function resolveBridgeRequest(actionId, decision) {
   return respondToServerRequest(actionId, decision);
 }
 
-function dispatchViaCli({ session, sessionId, message, model, reasoning, recordId, onUpdate }) {
+function dispatchViaCli({ session, sessionId, message, model, reasoning, approvalPolicy, recordId, onUpdate }) {
   const cwd = session.cwd || process.cwd();
   const args = ["resume", "-C", cwd, "--no-alt-screen"];
   if (model) args.push("-m", model);
   if (reasoning) args.push("-c", `model_reasoning_effort="${reasoning}"`);
+  if (approvalPolicy) args.push("-c", `approval_policy="${approvalPolicy}"`);
   args.push(sessionId, message);
 
   const command = codexCommand();

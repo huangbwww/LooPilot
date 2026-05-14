@@ -18,6 +18,7 @@ test("app-server bridge starts a turn and answers approval requests", { timeout:
       message: "hello from phone",
       model: "gpt-5.5",
       reasoning: "high",
+      approvalPolicy: "on-request",
       onUpdate: (update) => updates.push(update)
     });
 
@@ -31,6 +32,8 @@ test("app-server bridge starts a turn and answers approval requests", { timeout:
     assert.deepEqual(fake.methods, ["initialize", "initialized", "thread/resume", "turn/start"]);
     assert.deepEqual(fake.initializeParams.capabilities, { experimentalApi: true });
     assert.equal(fake.threadResumeParams.threadId, "019e1c98-c592-7dc2-a684-ffec77c153b8");
+    assert.equal(fake.threadResumeParams.config.model_reasoning_effort, "high");
+    assert.equal(fake.threadResumeParams.config.approval_policy, "on-request");
     assert.equal(fake.turnStartParams.model, "gpt-5.5");
     assert.equal(fake.turnStartParams.effort, "high");
     assert.deepEqual(fake.turnStartParams.input, [{ type: "text", text: "hello from phone", text_elements: [] }]);
