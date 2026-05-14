@@ -132,9 +132,11 @@ if (args.has("--prod")) {
   app.get(/.*/, (_req, res) => res.sendFile(path.join(buildDir, "index.html")));
 } else {
   const { createServer } = await import("vite");
+  const react = (await import("@vitejs/plugin-react")).default;
   const vite = await createServer({
     root,
     configFile: false,
+    plugins: [react()],
     cacheDir: path.join(getStateDir(), "vite-cache"),
     server: {
       middlewareMode: true,
