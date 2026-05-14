@@ -166,6 +166,19 @@ test("session drawer groups conversations by project like Codex desktop", () => 
   assert.match(cssBlock(".session-row"), /min-height:\s*62px/);
 });
 
+test("mobile layout clamps loaded conversation content to the viewport", () => {
+  assert.match(css, /html,\s*body,\s*#root\s*\{[\s\S]*max-width:\s*100vw/);
+  assert.match(cssBlock(".app-shell"), /max-width:\s*100vw/);
+  assert.match(cssBlock(".workspace"), /overflow:\s*hidden/);
+  assert.match(cssBlock(".session-surface"), /max-width:\s*100vw/);
+  assert.match(cssBlock(".timeline"), /width:\s*100%/);
+  assert.match(cssBlock(".timeline-item"), /overflow:\s*hidden/);
+  assert.match(cssBlock(".markdown-body code"), /overflow-wrap:\s*anywhere/);
+  assert.match(cssBlock(".markdown-code"), /white-space:\s*pre-wrap/);
+  assert.match(css, /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(css, /\.control-row \.option-menu:nth-child\(3\)\s*\{[\s\S]*grid-column:\s*1 \/ -1/);
+});
+
 test("doctor reports pairing code status without exposing the code", () => {
   const doctor = fs.readFileSync(new URL("../server/doctor.mjs", import.meta.url), "utf8");
   assert.match(doctor, /check\("Pairing code", \(\) => pairingStatus\(\)\)/);

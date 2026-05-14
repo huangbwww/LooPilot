@@ -21,6 +21,13 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  width: 100%;
+  max-width: 100vw;
+}
+
 body {
   margin: 0;
   min-width: 320px;
@@ -42,7 +49,10 @@ button {
 .app-shell {
   display: grid;
   grid-template-columns: 336px 1fr;
+  width: 100%;
+  max-width: 100vw;
   min-height: 100vh;
+  overflow-x: hidden;
   background:
     linear-gradient(180deg, rgba(109, 182, 255, 0.08), transparent 36%),
     var(--bg);
@@ -252,6 +262,9 @@ button {
 
 .workspace {
   min-width: 0;
+  width: 100%;
+  max-width: 100vw;
+  overflow: hidden;
   display: grid;
   grid-template-rows: auto 1fr auto;
   height: 100vh;
@@ -259,6 +272,9 @@ button {
 
 .topbar {
   gap: 12px;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
   min-height: 64px;
   border-bottom: 1px solid var(--line);
   background: rgba(15, 20, 27, 0.88);
@@ -267,6 +283,7 @@ button {
 
 .topbar-title {
   min-width: 0;
+  max-width: 100%;
   flex: 1;
 }
 
@@ -286,6 +303,7 @@ button {
 .sidebar-actions,
 .control-row,
 .prompt-actions {
+  min-width: 0;
   gap: 8px;
 }
 
@@ -348,6 +366,8 @@ button {
 }
 
 .session-surface {
+  width: 100%;
+  max-width: 100vw;
   overflow-x: hidden;
   overflow-y: auto;
   padding: 18px max(16px, env(safe-area-inset-right)) 20px max(16px, env(safe-area-inset-left));
@@ -379,11 +399,16 @@ button {
 .timeline {
   display: grid;
   gap: 12px;
+  width: 100%;
+  min-width: 0;
   max-width: 920px;
   margin: 0 auto;
 }
 
 .timeline-item {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 14px;
@@ -446,6 +471,7 @@ button {
 
 .item-head {
   display: flex;
+  min-width: 0;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 8px;
@@ -453,6 +479,9 @@ button {
 }
 
 .item-head span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--green);
   font-weight: 700;
 }
@@ -460,10 +489,16 @@ button {
 .markdown-body,
 .tool-summary,
 .action-prompt pre {
+  min-width: 0;
+  max-width: 100%;
   margin: 0;
   overflow-wrap: anywhere;
   line-height: 1.55;
   color: #dce5ed;
+}
+
+.markdown-body * {
+  max-width: 100%;
 }
 
 .tool-summary,
@@ -509,6 +544,9 @@ button {
 }
 
 .markdown-body code {
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
   padding: 2px 5px;
 }
 
@@ -519,7 +557,10 @@ button {
 }
 
 .markdown-code {
-  overflow: auto;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .tool-summary {
@@ -562,6 +603,8 @@ button {
 .action-prompt,
 .outbox,
 .empty-state {
+  width: 100%;
+  min-width: 0;
   max-width: 920px;
   margin: 0 auto 14px;
   border: 1px solid rgba(242, 189, 93, 0.35);
@@ -741,6 +784,9 @@ button {
 }
 
 .composer {
+  width: 100%;
+  max-width: 100vw;
+  overflow: hidden;
   padding-top: 10px;
   padding-bottom: max(12px, env(safe-area-inset-bottom));
   border-top: 1px solid var(--line);
@@ -749,11 +795,15 @@ button {
 }
 
 .control-row {
+  width: 100%;
+  min-width: 0;
   max-width: 920px;
   margin: 0 auto 10px;
 }
 
 .input-row {
+  width: 100%;
+  min-width: 0;
   max-width: 920px;
   margin: 0 auto;
   gap: 8px;
@@ -792,6 +842,8 @@ button {
   z-index: 60;
   display: grid;
   min-width: max(100%, 168px);
+  max-width: calc(100vw - 32px);
+  overflow-x: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 6px;
@@ -847,6 +899,8 @@ textarea {
 @media (max-width: 760px) {
   .app-shell {
     display: block;
+    width: 100vw;
+    max-width: 100vw;
   }
 
   .sidebar {
@@ -870,7 +924,13 @@ textarea {
   }
 
   .workspace {
+    width: 100vw;
+    max-width: 100vw;
     height: 100svh;
+  }
+
+  .topbar-title span {
+    max-width: 100%;
   }
 
   .mobile-only {
@@ -895,9 +955,13 @@ textarea {
 
   .control-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 1.18fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
     overflow: visible;
+  }
+
+  .control-row .option-menu:nth-child(3) {
+    grid-column: 1 / -1;
   }
 
   .option-trigger {
@@ -906,5 +970,9 @@ textarea {
     gap: 5px;
     padding: 0 7px;
     font-size: 14px;
+  }
+
+  .option-list {
+    min-width: 100%;
   }
 }
