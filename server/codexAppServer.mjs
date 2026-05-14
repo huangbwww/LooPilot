@@ -3,7 +3,12 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import WebSocket from "ws";
-import { normalizeApprovalPolicy, normalizeApprovalScope } from "./options.mjs";
+import {
+  defaultSandboxModeForApproval,
+  normalizeApprovalPolicy,
+  normalizeApprovalScope,
+  normalizeSandboxMode
+} from "./options.mjs";
 
 const DEFAULT_PORT = Number(process.env.LOOPILOT_CODEX_APP_SERVER_PORT || 4331);
 const APP_SERVER_URL = `ws://127.0.0.1:${DEFAULT_PORT}`;
@@ -18,15 +23,16 @@ let currentOnUpdate = null;
 const pending = new Map();
 const serverRequests = new Map();
 
-export async function startTurnViaAppServer({ session, message, model, reasoning, approvalPolicy, onUpdate }) {
+export async function startTurnViaAppServer({ session, message, model, reasoning, approvalPolicy, sandboxMode, onUpdate }) {
   currentOnUpdate = onUpdate;
   await ensureConnected(onUpdate);
   const safeApprovalPolicy = normalizeApprovalPolicy(approvalPolicy);
+  const safeSandboxMode = normalizeSandboxMode(sandboxMode) || defaultSandboxModeForApproval(safeApprovalPolicy);
   await request("thread/resume", {
     threadId: session.id,
     cwd: session.cwd || process.cwd(),
     model: model || null,
-    config: turnConfig({ reasoning, approvalPolicy: safeApprovalPolicy })
+    config: turnConfig({ reasoning, approvalPolicy: safeApprovalPolicy, sandboxMode: safeSandboxMode })
   });
   return request("turn/start", {
     threadId: session.id,
@@ -172,10 +178,11 @@ export function responseForDecision(method, params, decision) {
   return {};
 }
 
-function turnConfig({ reasoning, approvalPolicy }) {
+function turnConfig({ reasoning, approvalPolicy, sandboxMode }) {
   const config = {};
   if (reasoning) config.model_reasoning_effort = reasoning;
   if (approvalPolicy) config.approval_policy = approvalPolicy;
+  if (sandboxMode) config.sandbox_mode = sandboxMode;
   return Object.keys(config).length ? config : null;
 }
 

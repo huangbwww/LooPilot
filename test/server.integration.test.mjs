@@ -121,13 +121,15 @@ test("local server exposes token-protected sessions, websocket sync, and queue s
         message: "queued from integration",
         model: "gpt-5.5",
         reasoning: "high",
-        approvalPolicy: "on-request"
+        approvalPolicy: "on-request",
+        sandboxMode: "workspace-write"
       })
     });
     assert.equal(send.status, 202);
     assert.equal(send.body.dispatch.ok, true);
     assert.equal(send.body.dispatch.job.status, "queued_only");
     assert.equal(send.body.record.options.approvalPolicy, "on-request");
+    assert.equal(send.body.record.options.sandboxMode, "workspace-write");
 
     const action = await requestJson(port, `/api/sessions/${fixture.sessionId}/actions/ask-1`, token, {
       method: "POST",

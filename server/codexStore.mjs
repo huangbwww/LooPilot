@@ -78,11 +78,13 @@ function sortedSessionSummaries() {
 
   for (const row of index) {
     if (!row?.id) continue;
+    const filePath = files.get(row.id) || null;
+    const fileUpdatedAt = filePath ? safeStat(filePath)?.mtime?.toISOString() : null;
     summaries.set(row.id, {
       id: row.id,
       title: row.thread_name || "Untitled session",
-      updatedAt: row.updated_at,
-      path: files.get(row.id) || null
+      updatedAt: latestIsoDate(row.updated_at, fileUpdatedAt),
+      path: filePath
     });
   }
 
@@ -99,6 +101,12 @@ function sortedSessionSummaries() {
 
   return [...summaries.values()]
     .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+}
+
+function latestIsoDate(...values) {
+  return values
+    .filter(Boolean)
+    .sort((a, b) => new Date(b) - new Date(a))[0];
 }
 
 function hydrateSessionSummary(summary) {

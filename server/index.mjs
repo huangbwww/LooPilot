@@ -9,7 +9,12 @@ import { getAuthToken, getPairingCode, isPairingCodeValid, isWsAuthorized, requi
 import { dispatchRemoteMessage, resolveBridgeRequest } from "./codexBridge.mjs";
 import { shutdownAppServer } from "./codexAppServer.mjs";
 import { getStateDir } from "./state.mjs";
-import { normalizeApprovalPolicy, normalizeApprovalScope } from "./options.mjs";
+import {
+  defaultSandboxModeForApproval,
+  normalizeApprovalPolicy,
+  normalizeApprovalScope,
+  normalizeSandboxMode
+} from "./options.mjs";
 import { startPublicTunnel } from "./tunnel.mjs";
 import {
   enqueueRemoteMessage,
@@ -123,10 +128,12 @@ app.post("/api/sessions/:id/messages", (req, res) => {
   if (!message) return res.status(400).json({ error: "Message is required" });
   if (!getSessionDetail(req.params.id)) return res.status(404).json({ error: "Session not found" });
   const approvalPolicy = normalizeApprovalPolicy(req.body?.approvalPolicy);
+  const sandboxMode = normalizeSandboxMode(req.body?.sandboxMode) || defaultSandboxModeForApproval(approvalPolicy);
   const record = enqueueRemoteMessage(req.params.id, message, {
     model: req.body?.model,
     reasoning: req.body?.reasoning,
-    approvalPolicy
+    approvalPolicy,
+    sandboxMode
   });
   broadcast({ type: "outbox", record });
   const dispatch = dispatchRemoteMessage({
@@ -135,6 +142,7 @@ app.post("/api/sessions/:id/messages", (req, res) => {
     model: req.body?.model,
     reasoning: req.body?.reasoning,
     approvalPolicy,
+    sandboxMode,
     recordId: record.id,
     onUpdate: (job) => broadcast({ type: "bridge", job })
   });

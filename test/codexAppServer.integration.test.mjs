@@ -19,6 +19,7 @@ test("app-server bridge starts a turn and answers approval requests", { timeout:
       model: "gpt-5.5",
       reasoning: "high",
       approvalPolicy: "on-request",
+      sandboxMode: "workspace-write",
       onUpdate: (update) => updates.push(update)
     });
 
@@ -34,6 +35,7 @@ test("app-server bridge starts a turn and answers approval requests", { timeout:
     assert.equal(fake.threadResumeParams.threadId, "019e1c98-c592-7dc2-a684-ffec77c153b8");
     assert.equal(fake.threadResumeParams.config.model_reasoning_effort, "high");
     assert.equal(fake.threadResumeParams.config.approval_policy, "on-request");
+    assert.equal(fake.threadResumeParams.config.sandbox_mode, "workspace-write");
     assert.equal(fake.turnStartParams.model, "gpt-5.5");
     assert.equal(fake.turnStartParams.effort, "high");
     assert.deepEqual(fake.turnStartParams.input, [{ type: "text", text: "hello from phone", text_elements: [] }]);
@@ -79,6 +81,36 @@ test("app-server bridge routes server requests to the latest turn callback", { t
     assert.equal(firstUpdates.length, firstCount);
     assert.equal(appServer.respondToServerRequest("approval-1", "approved"), true);
     await second;
+  } finally {
+    appServer.shutdownAppServer();
+    await fake.close();
+  }
+});
+
+test("app-server bridge maps never approval to full sandbox access", { timeout: 10000 }, async () => {
+  const fake = await startFakeAppServer();
+  process.env.LOOPILOT_CODEX_APP_SERVER_PORT = String(fake.port);
+  const appServer = await import(`../server/codexAppServer.mjs?case=${Date.now()}-sandbox-default`);
+  const updates = [];
+
+  try {
+    const turn = appServer.startTurnViaAppServer({
+      session: {
+        id: "019e1c98-c592-7dc2-a684-ffec77c153b8",
+        cwd: process.cwd()
+      },
+      message: "needs git push",
+      model: "gpt-5.5",
+      reasoning: "high",
+      approvalPolicy: "never",
+      onUpdate: (update) => updates.push(update)
+    });
+    await waitFor(() => fake.threadResumeParams, 5000);
+    assert.equal(fake.threadResumeParams.config.approval_policy, "never");
+    assert.equal(fake.threadResumeParams.config.sandbox_mode, "danger-full-access");
+    await waitFor(() => updates.some((update) => update.serverRequestId === "approval-1"), 5000);
+    assert.equal(appServer.respondToServerRequest("approval-1", "approved"), true);
+    await turn;
   } finally {
     appServer.shutdownAppServer();
     await fake.close();

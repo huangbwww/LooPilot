@@ -138,6 +138,10 @@ fs.writeFileSync(
     payload: { id: outboxOrderSessionId, cwd: "D:\\LooPilot", model: "gpt-5.5" }
   })}\n`
 );
+fs.utimesSync(rolloutPath, new Date("2026-05-13T02:00:00.000Z"), new Date("2026-05-13T02:00:00.000Z"));
+fs.utimesSync(bridgeRolloutPath, new Date("2026-05-13T01:01:00.000Z"), new Date("2026-05-13T01:01:00.000Z"));
+fs.utimesSync(subagentRolloutPath, new Date("2026-05-13T01:02:00.000Z"), new Date("2026-05-13T01:02:00.000Z"));
+fs.utimesSync(outboxOrderRolloutPath, new Date("2026-05-13T01:03:00.000Z"), new Date("2026-05-13T01:03:00.000Z"));
 
 const store = await import(`../server/codexStore.mjs?case=${Date.now()}`);
 
@@ -153,6 +157,11 @@ test("lists Codex sessions from session_index and rollout files", () => {
   assert.equal(session.reasoning, "high");
   assert.equal(session.messageCount, 2);
   assert.equal(session.toolCount, 2);
+});
+
+test("prefers rollout file mtime when session_index timestamps are stale", () => {
+  const sessions = store.listSessions();
+  assert.equal(sessions[0].id, sessionId);
 });
 
 test("paginates session summaries before hydrating details", () => {
@@ -224,7 +233,8 @@ test("remote messages and action decisions are persisted to local state", () => 
   const message = store.enqueueRemoteMessage(sessionId, "from phone", {
     model: "gpt-5.5",
     reasoning: "high",
-    approvalPolicy: "on-request"
+    approvalPolicy: "on-request",
+    sandboxMode: "workspace-write"
   });
   const action = store.resolveAction(sessionId, "ask-1", {
     decision: "approved",
@@ -235,6 +245,7 @@ test("remote messages and action decisions are persisted to local state", () => 
   assert.equal(detail.outbox.some((item) => item.id === message.id && item.message === "from phone"), true);
   assert.equal(detail.outbox.some((item) => item.id === action.id && item.actionId === "ask-1"), true);
   assert.equal(message.options.approvalPolicy, "on-request");
+  assert.equal(message.options.sandboxMode, "workspace-write");
   assert.equal(action.decision, "approved");
   assert.deepEqual(action.answers, { choice: ["A"] });
   assert.equal(action.scope, "session");

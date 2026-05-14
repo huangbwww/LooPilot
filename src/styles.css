@@ -501,6 +501,35 @@ button {
   font-weight: 700;
 }
 
+.item-head-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.timeline-toggle {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.timeline-item.collapsed .timeline-toggle svg {
+  transform: rotate(-90deg);
+}
+
+.collapsed-preview {
+  margin: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
 .markdown-body,
 .tool-summary,
 .action-prompt pre {
@@ -800,7 +829,7 @@ button {
 
 .composer {
   position: relative;
-  z-index: 40;
+  z-index: 400;
   width: 100%;
   max-width: 100vw;
   overflow: visible;
@@ -830,6 +859,10 @@ button {
   position: relative;
   flex: 0 1 auto;
   min-width: 0;
+}
+
+.option-menu.open {
+  z-index: 460;
 }
 
 .option-trigger {
@@ -976,10 +1009,6 @@ textarea {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
     overflow: visible;
-  }
-
-  .control-row .option-menu:nth-child(3) {
-    grid-column: 1 / -1;
   }
 
   .option-trigger {

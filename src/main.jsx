@@ -40,6 +40,11 @@ const approvalScopeOptions = [
   { value: "session", label: "本会话" },
   { value: "always", label: "始终允许" }
 ];
+const sandboxModeOptions = [
+  { value: "danger-full-access", label: "完全访问" },
+  { value: "workspace-write", label: "项目写入" },
+  { value: "read-only", label: "只读" }
+];
 const storedBackendKey = "loopilot.backendUrl";
 const storedTokenKey = "loopilot.authToken";
 const sessionPageSize = 16;
@@ -59,6 +64,7 @@ function App() {
   const [model, setModel] = useState(modelOptions[0]);
   const [reasoning, setReasoning] = useState("high");
   const [approvalPolicy, setApprovalPolicy] = useState(approvalPolicyOptions[0].value);
+  const [sandboxMode, setSandboxMode] = useState(sandboxModeOptions[0].value);
   const [notificationPermission, setNotificationPermission] = useState(() => getNotificationPermission());
   const notifiedActions = useRef(new Set());
   const selectedIdRef = useRef("");
@@ -97,6 +103,7 @@ function App() {
     let stopped = false;
     let socket = null;
     let reconnectTimer = null;
+    let resumeTimer = null;
     let retryCount = 0;
 
     function applySessionPage(page) {
@@ -164,10 +171,15 @@ function App() {
     }
 
     function resumeConnection() {
+      clearTimeout(resumeTimer);
       if (document.visibilityState === "hidden") return;
-      if (!socket || socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING) connectSocket();
-      refreshFirstPage();
-      if (selectedIdRef.current) loadDetail(selectedIdRef.current, authToken, backendUrl).then(setDetail);
+      resumeTimer = setTimeout(() => {
+        if (document.visibilityState === "hidden") return;
+        retryCount = 0;
+        connectSocket();
+        refreshFirstPage();
+        if (selectedIdRef.current) loadDetail(selectedIdRef.current, authToken, backendUrl).then(setDetail);
+      }, 120);
     }
 
     refreshFirstPage();
@@ -178,6 +190,7 @@ function App() {
     return () => {
       stopped = true;
       clearTimeout(reconnectTimer);
+      clearTimeout(resumeTimer);
       window.removeEventListener("online", resumeConnection);
       window.removeEventListener("focus", resumeConnection);
       document.removeEventListener("visibilitychange", resumeConnection);
@@ -268,6 +281,8 @@ function App() {
           setReasoning={setReasoning}
           approvalPolicy={approvalPolicy}
           setApprovalPolicy={setApprovalPolicy}
+          sandboxMode={sandboxMode}
+          setSandboxMode={setSandboxMode}
           onSent={() => current?.id && loadDetail(current.id, authToken, backendUrl).then(setDetail)}
         />
         {(!authToken || !backendUrl) && (
@@ -616,24 +631,49 @@ function ActionPrompt({ session, authToken, backendUrl }) {
 }
 
 function TimelineItem({ item, sessionId, authToken, backendUrl }) {
+  const [collapsed, setCollapsed] = useState(false);
   const isTool = item.kind === "tool";
   const isToolOutput = item.kind === "tool-output";
+  const preview = collapsePreview(item.text);
   return (
-    <article className={`timeline-item ${item.role}`}>
+    <article className={`timeline-item ${item.role} ${collapsed ? "collapsed" : ""}`}>
       <div className="item-head">
         <span>{item.title}</span>
-        <time>{formatTime(item.at)}</time>
+        <div className="item-head-actions">
+          <time>{formatTime(item.at)}</time>
+          <button
+            type="button"
+            className="timeline-toggle"
+            aria-label={collapsed ? "展开消息" : "收起消息"}
+            aria-expanded={!collapsed}
+            onClick={() => setCollapsed((current) => !current)}
+          >
+            <ChevronDown size={14} />
+          </button>
+        </div>
       </div>
-      {isTool && <pre className="tool-summary">{item.text}</pre>}
-      {isToolOutput && (
-        <details className="tool-details">
-          <summary>查看工具输出</summary>
-          <pre className="tool-summary">{item.text}</pre>
-        </details>
+      {collapsed ? (
+        <p className="collapsed-preview">{preview}</p>
+      ) : (
+        <>
+          {isTool && <pre className="tool-summary">{item.text}</pre>}
+          {isToolOutput && (
+            <details className="tool-details">
+              <summary>查看工具输出</summary>
+              <pre className="tool-summary">{item.text}</pre>
+            </details>
+          )}
+          {!isTool && !isToolOutput && <MarkdownContent text={item.text} sessionId={sessionId} authToken={authToken} backendUrl={backendUrl} />}
+        </>
       )}
-      {!isTool && !isToolOutput && <MarkdownContent text={item.text} sessionId={sessionId} authToken={authToken} backendUrl={backendUrl} />}
     </article>
   );
+}
+
+function collapsePreview(text) {
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return "空消息";
+  return normalized.length > 160 ? `${normalized.slice(0, 160)}...` : normalized;
 }
 
 function MarkdownContent({ text, sessionId, authToken, backendUrl }) {
@@ -854,7 +894,20 @@ function imagePathFromMarkdown(value) {
   return input.replace(/^file:\/\//i, "");
 }
 
-function Composer({ session, authToken, backendUrl, model, reasoning, setModel, setReasoning, approvalPolicy, setApprovalPolicy, onSent }) {
+function Composer({
+  session,
+  authToken,
+  backendUrl,
+  model,
+  reasoning,
+  setModel,
+  setReasoning,
+  approvalPolicy,
+  setApprovalPolicy,
+  sandboxMode,
+  setSandboxMode,
+  onSent
+}) {
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   async function submit(event) {
@@ -864,7 +917,7 @@ function Composer({ session, authToken, backendUrl, model, reasoning, setModel, 
     await authedFetch(`/api/sessions/${session.id}/messages`, authToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, model, reasoning, approvalPolicy })
+      body: JSON.stringify({ message, model, reasoning, approvalPolicy, sandboxMode })
     }, backendUrl);
     setMessage("");
     setSending(false);
@@ -883,6 +936,7 @@ function Composer({ session, authToken, backendUrl, model, reasoning, setModel, 
           options={approvalPolicyOptions}
           onChange={setApprovalPolicy}
         />
+        <OptionMenu icon={<TerminalSquare size={15} />} label="Sandbox" value={sandboxMode} options={sandboxModeOptions} onChange={setSandboxMode} />
       </div>
       <div className="input-row">
         <button type="button" className="icon-button" aria-label="返回"><ChevronLeft size={18} /></button>

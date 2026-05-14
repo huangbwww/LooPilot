@@ -129,10 +129,13 @@ test("critical mobile actions remain reachable from the authenticated workspace"
   assert.match(app, /function mergeSessionLists\(primary, secondary\)/);
   assert.match(app, /const approvalPolicyOptions = \[/);
   assert.match(app, /const approvalScopeOptions = \[/);
+  assert.match(app, /const sandboxModeOptions = \[/);
   assert.match(app, /const \[approvalPolicy, setApprovalPolicy\] = useState\(approvalPolicyOptions\[0\]\.value\)/);
+  assert.match(app, /const \[sandboxMode, setSandboxMode\] = useState\(sandboxModeOptions\[0\]\.value\)/);
   assert.match(app, /<OptionMenu icon=\{<Sparkles size=\{15\} \/>\} label="Model" value=\{model\}/);
   assert.match(app, /<OptionMenu icon=\{<Settings2 size=\{15\} \/>\} label="Reasoning" value=\{reasoning\}/);
   assert.match(app, /label="Approval"[\s\S]+value=\{approvalPolicy\}/);
+  assert.match(app, /label="Sandbox" value=\{sandboxMode\}/);
   assert.match(app, /className="permission-scope"/);
   assert.match(app, /<textarea[\s\S]+onChange=\{\(event\) => setMessage\(event\.target\.value\)\}/);
   assert.match(app, /const \[customAnswers, setCustomAnswers\] = useState\(\{\}\)/);
@@ -142,13 +145,16 @@ test("critical mobile actions remain reachable from the authenticated workspace"
   assert.match(app, /placeholder="Custom answer"/);
   assert.match(app, /\.\.\.\(canChooseApprovalScope \? \{ scope: approvalScope \} : \{\}\)/);
   assert.match(app, /disabled=\{sending \|\| !message\.trim\(\) \|\| !session\?\.id\}/);
-  assert.match(app, /body: JSON\.stringify\(\{ message, model, reasoning, approvalPolicy \}\)/);
+  assert.match(app, /body: JSON\.stringify\(\{ message, model, reasoning, approvalPolicy, sandboxMode \}\)/);
   assert.match(app, /onSent=\{\(\) => current\?\.id && loadDetail\(current\.id, authToken, backendUrl\)\.then\(setDetail\)\}/);
 });
 
 test("timeline renders markdown, local images, and compact tool summaries", () => {
   assert.match(app, /<TimelineItem key=\{`\$\{item\.id\}-\$\{index\}`\} item=\{item\} sessionId=\{session\.id\} authToken=\{authToken\} backendUrl=\{backendUrl\} \/>/);
   assert.match(app, /function MarkdownContent\(\{ text, sessionId, authToken, backendUrl \}\)/);
+  assert.match(app, /const \[collapsed, setCollapsed\] = useState\(false\)/);
+  assert.match(app, /className="timeline-toggle"/);
+  assert.match(app, /function collapsePreview\(text\)/);
   assert.match(app, /function renderMarkdownBlocks\(text, sessionId, authToken, backendUrl\)/);
   assert.match(app, /function renderInline\(text, sessionId, authToken, backendUrl, keyPrefix\)/);
   assert.match(app, /function ImageBlock\(\{ src, alt, sessionId, authToken, backendUrl \}\)/);
@@ -164,6 +170,8 @@ test("timeline renders markdown, local images, and compact tool summaries", () =
   assert.match(css, /\.markdown-image\s*\{/);
   assert.match(css, /\.tool-summary\s*\{/);
   assert.match(css, /\.tool-details\s*\{/);
+  assert.match(css, /\.timeline-toggle\s*\{/);
+  assert.match(css, /\.collapsed-preview\s*\{/);
 });
 
 test("session drawer groups conversations by project like Codex desktop", () => {
@@ -189,7 +197,7 @@ test("mobile layout clamps loaded conversation content to the viewport", () => {
   assert.match(cssBlock(".workspace"), /overflow:\s*hidden/);
   assert.match(cssBlock(".session-surface"), /max-width:\s*100vw/);
   assert.match(cssBlock(".session-surface"), /z-index:\s*1/);
-  assert.match(css, /\.composer\s*\{[\s\S]*z-index:\s*40[\s\S]*overflow:\s*visible/);
+  assert.match(css, /\.composer\s*\{[\s\S]*z-index:\s*400[\s\S]*overflow:\s*visible/);
   assert.match(cssBlock(".option-list"), /z-index:\s*120/);
   assert.match(cssBlock(".option-list"), /max-height:\s*min\(320px,\s*42vh\)/);
   assert.match(cssBlock(".timeline"), /width:\s*100%/);
@@ -197,7 +205,7 @@ test("mobile layout clamps loaded conversation content to the viewport", () => {
   assert.match(cssBlock(".markdown-body code"), /overflow-wrap:\s*anywhere/);
   assert.match(cssBlock(".markdown-code"), /white-space:\s*pre-wrap/);
   assert.match(css, /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
-  assert.match(css, /\.control-row \.option-menu:nth-child\(3\)\s*\{[\s\S]*grid-column:\s*1 \/ -1/);
+  assert.match(css, /\.option-menu\.open\s*\{[\s\S]*z-index:\s*460/);
 });
 
 test("android shell keeps the web app local and connects to a configured backend", () => {
