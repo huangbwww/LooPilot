@@ -231,35 +231,70 @@ function SidebarHeader({ connection, waitingCount, onClose }) {
 }
 
 function SessionList({ sessions, selectedId, onSelect }) {
+  const [expandedSubagents, setExpandedSubagents] = useState({});
   const groups = groupSessionsByProject(sessions);
   return (
     <div className="session-list">
-      {groups.map((group) => (
-        <section className="project-group" key={group.key}>
-          <div className="project-header">
-            <Folder size={15} />
-            <span>{group.name}</span>
-          </div>
-          {group.sessions.map((session) => (
-            <button
-              key={session.id}
-              className={`session-row ${session.id === selectedId ? "active" : ""}`}
-              onClick={() => onSelect(session.id)}
-            >
-              <span className={`state-dot ${session.status}`} />
-              <span className="session-main">
-                <strong>{session.title}</strong>
-                <small>{session.lastOutput || session.cwd || session.id}</small>
-              </span>
-              <span className="session-meta">
-                <small>{formatTime(session.updatedAt)}</small>
-                {session.pendingAction && <Bell size={15} />}
-              </span>
-            </button>
-          ))}
-        </section>
-      ))}
+      {groups.map((group) => {
+        const primarySessions = group.sessions.filter((session) => !session.isSubagent);
+        const subagents = group.sessions.filter((session) => session.isSubagent);
+        const selectedSubagent = subagents.some((session) => session.id === selectedId);
+        const subagentsOpen = Boolean(expandedSubagents[group.key] || selectedSubagent);
+        return (
+          <section className="project-group" key={group.key}>
+            <div className="project-header">
+              <Folder size={15} />
+              <span>{group.name}</span>
+            </div>
+            {primarySessions.map((session) => (
+              <SessionRow key={session.id} session={session} selectedId={selectedId} onSelect={onSelect} />
+            ))}
+            {subagents.length > 0 && (
+              <div className="subagent-section">
+                <button
+                  type="button"
+                  className={`subagent-toggle ${subagentsOpen ? "open" : ""}`}
+                  onClick={() => setExpandedSubagents((current) => ({
+                    ...current,
+                    [group.key]: !subagentsOpen
+                  }))}
+                >
+                  <ChevronDown size={14} />
+                  <span>子会话</span>
+                  <small>{subagents.length}</small>
+                </button>
+                {subagentsOpen && (
+                  <div className="subagent-list">
+                    {subagents.map((session) => (
+                      <SessionRow key={session.id} session={session} selectedId={selectedId} onSelect={onSelect} subagent />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        );
+      })}
     </div>
+  );
+}
+
+function SessionRow({ session, selectedId, onSelect, subagent }) {
+  return (
+    <button
+      className={`session-row ${subagent ? "subagent" : ""} ${session.id === selectedId ? "active" : ""}`}
+      onClick={() => onSelect(session.id)}
+    >
+      <span className={`state-dot ${session.status}`} />
+      <span className="session-main">
+        <strong>{session.title}</strong>
+        <small>{session.lastOutput || session.agentNickname || session.cwd || session.id}</small>
+      </span>
+      <span className="session-meta">
+        <small>{formatTime(session.updatedAt)}</small>
+        {session.pendingAction && <Bell size={15} />}
+      </span>
+    </button>
   );
 }
 
@@ -288,6 +323,18 @@ function TopBar({ session, connection, bridgeMode, waitingCount, notificationPer
 }
 
 function SessionSurface({ session, authToken }) {
+  const surfaceRef = useRef(null);
+  const outboxItems = useMemo(() => visibleOutboxItems(session?.outbox), [session?.outbox]);
+
+  useEffect(() => {
+    const element = surfaceRef.current;
+    if (!element || !session?.id) return undefined;
+    const frame = requestAnimationFrame(() => {
+      element.scrollTop = element.scrollHeight;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [session?.id, session?.timeline?.length, session?.outbox?.length, session?.status]);
+
   if (!session) {
     return (
       <div className="empty-state">
@@ -299,7 +346,7 @@ function SessionSurface({ session, authToken }) {
   }
 
   return (
-    <div className="session-surface">
+    <div className="session-surface" ref={surfaceRef}>
       <div className="status-strip">
         <Metric icon={<Circle size={12} />} label="状态" value={statusText(session.status)} tone={session.status} />
         <Metric icon={<MessageSquare size={14} />} label="消息" value={session.messageCount || 0} />
@@ -311,17 +358,29 @@ function SessionSurface({ session, authToken }) {
         {(session.timeline || []).map((item, index) => (
           <TimelineItem key={`${item.id}-${index}`} item={item} sessionId={session.id} authToken={authToken} />
         ))}
+        {session.status === "running" && <RunningIndicator />}
       </div>
-      {session.outbox?.length > 0 && (
+      {outboxItems.length > 0 && (
         <div className="outbox">
           <strong>远程队列</strong>
-          {session.outbox.slice(-3).map((item) => (
-            <span key={`${item.id}-${item.status}-${item.at || item.finishedAt || item.createdAt}`}>
-              {item.message || item.decision || item.command || item.text || "Bridge"} · {item.status}
+          {outboxItems.map((item) => (
+            <span className={item.tone || ""} key={item.key}>
+              {item.label}
             </span>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function RunningIndicator() {
+  return (
+    <div className="running-indicator" aria-live="polite">
+      <span className="thinking-dot" />
+      <span className="thinking-dot" />
+      <span className="thinking-dot" />
+      <strong>Codex 正在运行</strong>
     </div>
   );
 }
@@ -703,11 +762,28 @@ function Composer({ session, authToken, model, reasoning, setModel, setReasoning
 
 function OptionMenu({ icon, label, value, options, onChange }) {
   const [open, setOpen] = useState(false);
+  const menuRef = useRef(null);
   const selected = options.find((option) => option.value === value) || value;
   const selectedLabel = typeof selected === "string" ? selected : selected.label;
 
+  useEffect(() => {
+    if (!open) return undefined;
+    function closeFromOutside(event) {
+      if (!menuRef.current?.contains(event.target)) setOpen(false);
+    }
+    function closeOnEscape(event) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", closeFromOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeFromOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
   return (
-    <div className={`option-menu ${open ? "open" : ""}`}>
+    <div className={`option-menu ${open ? "open" : ""}`} ref={menuRef}>
       <button type="button" className="option-trigger" aria-label={label} aria-expanded={open} onClick={() => setOpen((current) => !current)}>
         {icon}
         <span>{selectedLabel}</span>
@@ -787,6 +863,86 @@ function readInitialToken() {
     return tokenFromUrl;
   }
   return localStorage.getItem(storedTokenKey) || "";
+}
+
+function visibleOutboxItems(items = []) {
+  return items
+    .slice()
+    .sort((a, b) => outboxItemTime(a) - outboxItemTime(b))
+    .map((item) => formatOutboxItem(item))
+    .filter(Boolean)
+    .map((item) => ({
+      ...item,
+      label: item.status ? `${item.message} · ${item.status}` : item.message
+    }))
+    .slice(-3);
+}
+
+function outboxItemTime(item) {
+  const value = item?.createdAt || item?.at || item?.startedAt || item?.finishedAt;
+  const time = value ? new Date(value).getTime() : 0;
+  return Number.isFinite(time) ? time : 0;
+}
+
+function formatOutboxItem(item) {
+  const status = String(item?.status || "");
+  const key = `${item?.id || item?.serverRequestId || item?.createdAt || item?.at}-${status}`;
+
+  if (item?.message) {
+    return {
+      key,
+      tone: statusTone(status),
+      message: `已发送：${clipUi(item.message, 72)}`,
+      status: outboxStatusText(status)
+    };
+  }
+
+  if (item?.decision || item?.actionId) {
+    return {
+      key,
+      tone: statusTone(status),
+      message: item.decision ? `已响应确认：${item.decision}` : "已响应确认",
+      status: outboxStatusText(status)
+    };
+  }
+
+  if (status === "output") return null;
+  if (status === "dispatching") {
+    return { key, tone: "syncing", message: "正在发送到 Codex Desktop", status: "同步中" };
+  }
+  if (status === "sent") {
+    return { key, tone: "synced", message: "已同步到 Codex Desktop", status: "完成" };
+  }
+  if (status === "queued_only") {
+    return { key, tone: "waiting", message: "已加入本地队列", status: "等待同步" };
+  }
+  if (["needs_approval", "needs_input", "needs_response"].includes(status)) {
+    return { key, tone: "waiting", message: "等待你处理确认", status: "待确认" };
+  }
+  if (status.includes("failed") || item?.error) {
+    return { key, tone: "failed", message: item?.error ? `发送失败：${clipUi(item.error, 72)}` : "发送失败", status: "失败" };
+  }
+  return null;
+}
+
+function statusTone(status) {
+  if (status === "sent") return "synced";
+  if (status === "queued" || status === "dispatching") return "syncing";
+  if (status.includes("failed")) return "failed";
+  return "";
+}
+
+function outboxStatusText(status) {
+  if (status === "queued") return "排队中";
+  if (status === "dispatching") return "同步中";
+  if (status === "sent") return "完成";
+  if (status === "failed") return "失败";
+  return status || "记录";
+}
+
+function clipUi(value, max) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
 function groupSessionsByProject(sessions) {

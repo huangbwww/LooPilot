@@ -158,6 +158,51 @@ button {
   background: var(--panel-2);
 }
 
+.session-row.subagent {
+  min-height: 54px;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.subagent-section {
+  margin: 2px 0 4px 14px;
+  border-left: 1px solid var(--line);
+}
+
+.subagent-toggle {
+  display: flex;
+  width: calc(100% - 8px);
+  min-height: 32px;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+}
+
+.subagent-toggle:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.subagent-toggle svg {
+  transition: transform 0.16s ease;
+}
+
+.subagent-toggle:not(.open) svg {
+  transform: rotate(-90deg);
+}
+
+.subagent-toggle small {
+  margin-left: auto;
+}
+
+.subagent-list {
+  margin-left: 8px;
+}
+
 .state-dot {
   width: 8px;
   height: 8px;
@@ -356,6 +401,47 @@ button {
 .timeline-item.tool,
 .timeline-item.tool-output {
   background: #111922;
+}
+
+.running-indicator {
+  display: flex;
+  min-height: 54px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(77, 209, 161, 0.28);
+  border-radius: 8px;
+  padding: 0 14px;
+  color: var(--green);
+  background: rgba(77, 209, 161, 0.08);
+}
+
+.thinking-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  animation: thinking-pulse 1s infinite ease-in-out;
+}
+
+.thinking-dot:nth-child(2) {
+  animation-delay: 0.12s;
+}
+
+.thinking-dot:nth-child(3) {
+  animation-delay: 0.24s;
+}
+
+@keyframes thinking-pulse {
+  0%,
+  80%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
 }
 
 .item-head {
@@ -625,6 +711,23 @@ button {
   gap: 6px;
   border-color: rgba(109, 182, 255, 0.22);
   background: rgba(109, 182, 255, 0.07);
+}
+
+.outbox span {
+  display: block;
+}
+
+.outbox span.synced {
+  color: var(--green);
+}
+
+.outbox span.syncing,
+.outbox span.waiting {
+  color: var(--yellow);
+}
+
+.outbox span.failed {
+  color: var(--red);
 }
 
 .empty-state {

@@ -63,6 +63,10 @@ export function listSessions() {
         cwd: parsed?.cwd,
         model: parsed?.model,
         reasoning: parsed?.reasoning,
+        threadSource: parsed?.threadSource || "user",
+        parentThreadId: parsed?.parentThreadId || "",
+        agentNickname: parsed?.agentNickname || "",
+        isSubagent: parsed?.threadSource === "subagent",
         status: parsed?.status === "waiting" && !pendingAction ? "idle" : parsed?.status || "idle",
         progress: parsed?.progress || [],
         pendingAction,
@@ -153,6 +157,9 @@ function parseSessionFile(filePath, { detail }) {
   let cwd = "";
   let model = "";
   let reasoning = "";
+  let threadSource = "user";
+  let parentThreadId = "";
+  let agentNickname = "";
   let status = "idle";
   let pendingAction = null;
   let lastOutput = "";
@@ -166,6 +173,13 @@ function parseSessionFile(filePath, { detail }) {
       id = row.payload?.id || id;
       cwd = row.payload?.cwd || cwd;
       model = row.payload?.model || model;
+      threadSource = row.payload?.thread_source || threadSource;
+      parentThreadId = row.payload?.source?.subagent?.thread_spawn?.parent_thread_id
+        || row.payload?.forked_from_id
+        || parentThreadId;
+      agentNickname = row.payload?.agent_nickname
+        || row.payload?.source?.subagent?.thread_spawn?.agent_nickname
+        || agentNickname;
       continue;
     }
 
@@ -257,6 +271,9 @@ function parseSessionFile(filePath, { detail }) {
     cwd,
     model,
     reasoning,
+    threadSource,
+    parentThreadId,
+    agentNickname,
     status,
     progress: progress.slice(-5),
     pendingAction,
@@ -275,7 +292,15 @@ function readOutbox(sessionId) {
     path.join(OUTBOX_DIR, `${sessionId}.actions.jsonl`),
     path.join(JOBS_DIR, `${sessionId}.jsonl`)
   ];
-  return files.flatMap((file) => (fs.existsSync(file) ? readJsonl(file) : []));
+  return files
+    .flatMap((file) => (fs.existsSync(file) ? readJsonl(file) : []))
+    .sort((a, b) => recordTime(a) - recordTime(b));
+}
+
+function recordTime(record) {
+  const value = record?.createdAt || record?.at || record?.startedAt || record?.finishedAt;
+  const time = value ? new Date(value).getTime() : 0;
+  return Number.isFinite(time) ? time : 0;
 }
 
 function pendingActionFromJobs(records) {
