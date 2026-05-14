@@ -8,6 +8,7 @@ import { getAuthToken, getPairingCode, isPairingCodeValid, isWsAuthorized, requi
 import { dispatchRemoteMessage, resolveBridgeRequest } from "./codexBridge.mjs";
 import { shutdownAppServer } from "./codexAppServer.mjs";
 import { getStateDir } from "./state.mjs";
+import { normalizeApprovalPolicy, normalizeApprovalScope } from "./options.mjs";
 import { startPublicTunnel } from "./tunnel.mjs";
 import {
   enqueueRemoteMessage,
@@ -82,9 +83,11 @@ app.post("/api/sessions/:id/messages", (req, res) => {
   const message = String(req.body?.message || "").trim();
   if (!message) return res.status(400).json({ error: "Message is required" });
   if (!getSessionDetail(req.params.id)) return res.status(404).json({ error: "Session not found" });
+  const approvalPolicy = normalizeApprovalPolicy(req.body?.approvalPolicy);
   const record = enqueueRemoteMessage(req.params.id, message, {
     model: req.body?.model,
-    reasoning: req.body?.reasoning
+    reasoning: req.body?.reasoning,
+    approvalPolicy
   });
   broadcast({ type: "outbox", record });
   const dispatch = dispatchRemoteMessage({
@@ -92,6 +95,7 @@ app.post("/api/sessions/:id/messages", (req, res) => {
     message,
     model: req.body?.model,
     reasoning: req.body?.reasoning,
+    approvalPolicy,
     recordId: record.id,
     onUpdate: (job) => broadcast({ type: "bridge", job })
   });
@@ -198,8 +202,12 @@ process.once("SIGINT", shutdown);
 process.once("SIGTERM", shutdown);
 
 export function actionDecisionFromBody(body = {}) {
-  if (body?.answers && typeof body.decision === "string") {
-    return { decision: body.decision, answers: body.answers };
+  if (typeof body?.decision === "string") {
+    return {
+      decision: body.decision,
+      ...(body.answers ? { answers: body.answers } : {}),
+      ...(normalizeApprovalScope(body.scope) ? { scope: normalizeApprovalScope(body.scope) } : {})
+    };
   }
   return body?.decision || "approved";
 }

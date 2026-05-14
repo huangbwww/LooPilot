@@ -4,12 +4,15 @@ import {
   Bell,
   Bot,
   Check,
+  ChevronDown,
   ChevronLeft,
   Circle,
   Clock3,
+  Folder,
   MessageSquare,
   PanelLeft,
   Send,
+  ShieldCheck,
   Settings2,
   Smartphone,
   Sparkles,
@@ -27,6 +30,16 @@ import "./styles.css";
 
 const modelOptions = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex"];
 const reasoningOptions = ["low", "medium", "high", "xhigh"];
+const approvalPolicyOptions = [
+  { value: "on-request", label: "按需确认" },
+  { value: "on-failure", label: "失败时确认" },
+  { value: "never", label: "完全访问权限" }
+];
+const approvalScopeOptions = [
+  { value: "turn", label: "仅本次" },
+  { value: "session", label: "本会话" },
+  { value: "always", label: "始终允许" }
+];
 const storedTokenKey = "loopilot.authToken";
 
 function App() {
@@ -39,6 +52,7 @@ function App() {
   const [connection, setConnection] = useState("connecting");
   const [model, setModel] = useState(modelOptions[0]);
   const [reasoning, setReasoning] = useState("high");
+  const [approvalPolicy, setApprovalPolicy] = useState(approvalPolicyOptions[0].value);
   const [notificationPermission, setNotificationPermission] = useState(() => getNotificationPermission());
   const notifiedActions = useRef(new Set());
   const selected = useMemo(
@@ -148,6 +162,8 @@ function App() {
           reasoning={reasoning}
           setModel={setModel}
           setReasoning={setReasoning}
+          approvalPolicy={approvalPolicy}
+          setApprovalPolicy={setApprovalPolicy}
           onSent={() => current?.id && loadDetail(current.id, authToken).then(setDetail)}
         />
         {!authToken && <AuthGate onSave={setAuthToken} />}
@@ -215,24 +231,33 @@ function SidebarHeader({ connection, waitingCount, onClose }) {
 }
 
 function SessionList({ sessions, selectedId, onSelect }) {
+  const groups = groupSessionsByProject(sessions);
   return (
     <div className="session-list">
-      {sessions.map((session) => (
-        <button
-          key={session.id}
-          className={`session-row ${session.id === selectedId ? "active" : ""}`}
-          onClick={() => onSelect(session.id)}
-        >
-          <span className={`state-dot ${session.status}`} />
-          <span className="session-main">
-            <strong>{session.title}</strong>
-            <small>{session.lastOutput || session.cwd || session.id}</small>
-          </span>
-          <span className="session-meta">
-            <small>{formatTime(session.updatedAt)}</small>
-            {session.pendingAction && <Bell size={15} />}
-          </span>
-        </button>
+      {groups.map((group) => (
+        <section className="project-group" key={group.key}>
+          <div className="project-header">
+            <Folder size={15} />
+            <span>{group.name}</span>
+          </div>
+          {group.sessions.map((session) => (
+            <button
+              key={session.id}
+              className={`session-row ${session.id === selectedId ? "active" : ""}`}
+              onClick={() => onSelect(session.id)}
+            >
+              <span className={`state-dot ${session.status}`} />
+              <span className="session-main">
+                <strong>{session.title}</strong>
+                <small>{session.lastOutput || session.cwd || session.id}</small>
+              </span>
+              <span className="session-meta">
+                <small>{formatTime(session.updatedAt)}</small>
+                {session.pendingAction && <Bell size={15} />}
+              </span>
+            </button>
+          ))}
+        </section>
       ))}
     </div>
   );
@@ -305,6 +330,8 @@ function ActionPrompt({ session, authToken }) {
   const [busy, setBusy] = useState(false);
   const [answers, setAnswers] = useState({});
   const [customAnswers, setCustomAnswers] = useState({});
+  const [approvalScope, setApprovalScope] = useState("turn");
+  const canChooseApprovalScope = session.pendingAction.method === "item/permissions/requestApproval";
   async function decide(decision) {
     setBusy(true);
     const mergedAnswers = { ...answers };
@@ -315,7 +342,9 @@ function ActionPrompt({ session, authToken }) {
     await authedFetch(`/api/sessions/${session.id}/actions/${session.pendingAction.id}`, authToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(typeof decision === "object" ? { ...decision, answers: mergedAnswers } : { decision })
+      body: JSON.stringify(typeof decision === "object"
+        ? { ...decision, answers: mergedAnswers }
+        : { decision, ...(canChooseApprovalScope ? { scope: approvalScope } : {}) })
     });
     setBusy(false);
   }
@@ -361,6 +390,20 @@ function ActionPrompt({ session, authToken }) {
       ) : (
         <pre>{session.pendingAction.detail}</pre>
       )}
+      {canChooseApprovalScope && (
+        <div className="permission-scope" role="radiogroup" aria-label="Approval scope">
+          {approvalScopeOptions.map((option) => (
+            <button
+              type="button"
+              key={option.value}
+              className={approvalScope === option.value ? "selected" : ""}
+              onClick={() => setApprovalScope(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="prompt-actions">
         {session.pendingAction.kind === "input" ? (
           <button disabled={busy} onClick={() => decide({ decision: "approved" })}><Check size={16} />提交</button>
@@ -385,7 +428,7 @@ function TimelineItem({ item }) {
   );
 }
 
-function Composer({ session, authToken, model, reasoning, setModel, setReasoning, onSent }) {
+function Composer({ session, authToken, model, reasoning, setModel, setReasoning, approvalPolicy, setApprovalPolicy, onSent }) {
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   async function submit(event) {
@@ -395,7 +438,7 @@ function Composer({ session, authToken, model, reasoning, setModel, setReasoning
     await authedFetch(`/api/sessions/${session.id}/messages`, authToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, model, reasoning })
+      body: JSON.stringify({ message, model, reasoning, approvalPolicy })
     });
     setMessage("");
     setSending(false);
@@ -405,18 +448,15 @@ function Composer({ session, authToken, model, reasoning, setModel, setReasoning
   return (
     <form className="composer" onSubmit={submit}>
       <div className="control-row">
-        <label>
-          <Sparkles size={15} />
-          <select value={model} onChange={(event) => setModel(event.target.value)}>
-            {modelOptions.map((option) => <option key={option}>{option}</option>)}
-          </select>
-        </label>
-        <label>
-          <Settings2 size={15} />
-          <select value={reasoning} onChange={(event) => setReasoning(event.target.value)}>
-            {reasoningOptions.map((option) => <option key={option}>{option}</option>)}
-          </select>
-        </label>
+        <OptionMenu icon={<Sparkles size={15} />} label="Model" value={model} options={modelOptions} onChange={setModel} />
+        <OptionMenu icon={<Settings2 size={15} />} label="Reasoning" value={reasoning} options={reasoningOptions} onChange={setReasoning} />
+        <OptionMenu
+          icon={<ShieldCheck size={15} />}
+          label="Approval"
+          value={approvalPolicy}
+          options={approvalPolicyOptions}
+          onChange={setApprovalPolicy}
+        />
       </div>
       <div className="input-row">
         <button type="button" className="icon-button" aria-label="返回"><ChevronLeft size={18} /></button>
@@ -431,6 +471,43 @@ function Composer({ session, authToken, model, reasoning, setModel, setReasoning
         </button>
       </div>
     </form>
+  );
+}
+
+function OptionMenu({ icon, label, value, options, onChange }) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((option) => option.value === value) || value;
+  const selectedLabel = typeof selected === "string" ? selected : selected.label;
+
+  return (
+    <div className={`option-menu ${open ? "open" : ""}`}>
+      <button type="button" className="option-trigger" aria-label={label} aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+        {icon}
+        <span>{selectedLabel}</span>
+        <ChevronDown size={14} />
+      </button>
+      {open && (
+        <div className="option-list" role="listbox" aria-label={label}>
+          {options.map((option) => {
+            const optionValue = typeof option === "string" ? option : option.value;
+            const optionLabel = typeof option === "string" ? option : option.label;
+            return (
+              <button
+                type="button"
+                key={optionValue}
+                className={optionValue === value ? "selected" : ""}
+                onClick={() => {
+                  onChange(optionValue);
+                  setOpen(false);
+                }}
+              >
+                {optionLabel}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -483,6 +560,33 @@ function readInitialToken() {
     return tokenFromUrl;
   }
   return localStorage.getItem(storedTokenKey) || "";
+}
+
+function groupSessionsByProject(sessions) {
+  const groups = new Map();
+  for (const session of sessions) {
+    const key = projectKey(session.cwd);
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        name: projectName(session.cwd),
+        cwd: session.cwd || "",
+        sessions: []
+      });
+    }
+    groups.get(key).sessions.push(session);
+  }
+  return [...groups.values()];
+}
+
+function projectKey(cwd) {
+  const value = String(cwd || "").trim();
+  return value ? value.replace(/[\\]+/g, "/").toLowerCase() : "__uncategorized__";
+}
+
+function projectName(cwd) {
+  const parts = String(cwd || "").split(/[\\/]+/).filter(Boolean);
+  return parts.at(-1) || "未归类";
 }
 
 function statusText(status) {

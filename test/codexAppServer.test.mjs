@@ -12,6 +12,9 @@ test("maps approval decisions to Codex app-server approval responses", () => {
   assert.deepEqual(responseForDecision("item/fileChange/requestApproval", {}, "approved"), {
     decision: "accept"
   });
+  assert.deepEqual(responseForDecision("item/fileRead/requestApproval", {}, "approved"), {
+    decision: "accept"
+  });
   assert.deepEqual(responseForDecision("execCommandApproval", {}, "approved"), {
     decision: "approved"
   });
@@ -34,6 +37,14 @@ test("maps phone choice answers to request_user_input response shape", () => {
 test("maps permission approvals to a turn-scoped permission grant", () => {
   const permissions = { network: { hosts: ["example.com"] } };
   assert.deepEqual(responseForDecision("item/permissions/requestApproval", { permissions }, "approved"), {
+    permissions,
+    scope: "turn"
+  });
+  assert.deepEqual(responseForDecision("item/permissions/requestApproval", { permissions }, { decision: "approved", scope: "session" }), {
+    permissions,
+    scope: "session"
+  });
+  assert.deepEqual(responseForDecision("item/permissions/requestApproval", { permissions }, { decision: "approved", scope: "invalid" }), {
     permissions,
     scope: "turn"
   });

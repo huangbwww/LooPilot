@@ -118,6 +118,7 @@ export function resolveAction(sessionId, actionId, decision) {
     actionId,
     decision: normalized.decision,
     ...(normalized.answers ? { answers: normalized.answers } : {}),
+    ...(normalized.scope ? { scope: normalized.scope } : {}),
     status: "queued",
     createdAt: new Date().toISOString()
   };
@@ -431,7 +432,8 @@ function normalizeDecisionRecord(decision) {
   if (decision && typeof decision === "object") {
     return {
       decision: decision.decision || "approved",
-      answers: decision.answers
+      answers: decision.answers,
+      scope: decision.scope
     };
   }
   return { decision: decision || "approved" };

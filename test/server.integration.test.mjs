@@ -92,19 +92,33 @@ test("local server exposes token-protected sessions, websocket sync, and queue s
 
     const send = await requestJson(port, `/api/sessions/${fixture.sessionId}/messages`, token, {
       method: "POST",
-      body: JSON.stringify({ message: "queued from integration", model: "gpt-5.5", reasoning: "high" })
+      body: JSON.stringify({
+        message: "queued from integration",
+        model: "gpt-5.5",
+        reasoning: "high",
+        approvalPolicy: "on-request"
+      })
     });
     assert.equal(send.status, 202);
     assert.equal(send.body.dispatch.ok, true);
     assert.equal(send.body.dispatch.job.status, "queued_only");
+    assert.equal(send.body.record.options.approvalPolicy, "on-request");
 
     const action = await requestJson(port, `/api/sessions/${fixture.sessionId}/actions/ask-1`, token, {
       method: "POST",
-      body: JSON.stringify({ decision: "approved", answers: { mode: ["Custom"] } })
+      body: JSON.stringify({ decision: "approved", answers: { mode: ["Custom"] }, scope: "session" })
     });
     assert.equal(action.status, 202);
     assert.equal(action.body.record.decision, "approved");
     assert.deepEqual(action.body.record.answers, { mode: ["Custom"] });
+    assert.equal(action.body.record.scope, "session");
+
+    const invalidAction = await requestJson(port, `/api/sessions/${fixture.sessionId}/actions/ask-2`, token, {
+      method: "POST",
+      body: JSON.stringify({ decision: "approved", scope: "invalid" })
+    });
+    assert.equal(invalidAction.status, 202);
+    assert.equal("scope" in invalidAction.body.record, false);
   } finally {
     await stopChild(child);
   }
