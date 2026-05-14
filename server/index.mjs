@@ -32,6 +32,12 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
 let tunnelHandle = null;
+const keepAliveTimer = setInterval(() => {
+  for (const client of wss.clients) {
+    if (client.readyState === client.OPEN) client.ping();
+  }
+}, 25000);
+keepAliveTimer.unref?.();
 const pairAttempts = new Map();
 const PAIR_ATTEMPT_LIMIT = 8;
 const PAIR_ATTEMPT_WINDOW_MS = 5 * 60 * 1000;
@@ -91,7 +97,7 @@ app.get("/api/sessions", (req, res) => {
 });
 
 app.get("/api/sessions/:id", (req, res) => {
-  const detail = getSessionDetail(req.params.id);
+  const detail = getSessionDetail(req.params.id, { limit: req.query?.limit });
   if (!detail) return res.status(404).json({ error: "Session not found" });
   res.json({ session: detail });
 });
@@ -166,7 +172,7 @@ if (args.has("--prod")) {
 }
 
 wss.on("connection", (socket) => {
-  socket.send(JSON.stringify({ type: "snapshot", ...listSessionPage({ limit: 40 }) }));
+  socket.send(JSON.stringify({ type: "snapshot", ...listSessionPage({ limit: 16 }) }));
 });
 
 server.on("upgrade", (request, socket, head) => {
@@ -190,7 +196,7 @@ let broadcastTimer = null;
 watcher.on("all", () => {
   clearTimeout(broadcastTimer);
   broadcastTimer = setTimeout(() => {
-    broadcast({ type: "snapshot", ...listSessionPage({ limit: 40 }) });
+    broadcast({ type: "snapshot", ...listSessionPage({ limit: 16 }) });
   }, 120);
 });
 
@@ -238,6 +244,7 @@ function isAllowedShellOrigin(origin) {
 }
 
 function shutdown() {
+  clearInterval(keepAliveTimer);
   tunnelHandle?.kill?.();
   shutdownAppServer();
   for (const client of wss.clients) client.terminate();

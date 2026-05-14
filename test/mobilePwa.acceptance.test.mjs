@@ -108,12 +108,16 @@ test("critical mobile actions remain reachable from the authenticated workspace"
   assert.match(app, /exchangePairingCode\(credential, nextBackendUrl \|\| backendUrl\)/);
   assert.match(app, /fetch\(apiUrl\("\/api\/pair", backendUrl\)/);
   assert.match(app, /new WebSocket\(liveUrl\(backendUrl, authToken\)\)/);
-  assert.match(app, /const sessionPageSize = 40/);
+  assert.match(app, /const sessionPageSize = 16/);
+  assert.match(app, /const detailItemLimit = 120/);
+  assert.match(app, /socket\.onclose = scheduleReconnect/);
+  assert.match(app, /document\.addEventListener\("visibilitychange", resumeConnection\)/);
   assert.match(app, /setSessions\(\(current\) => mergeSessionLists\(snapshotSessions, current\)\)/);
   assert.match(app, /loadDetail\(selectedIdRef\.current, authToken, backendUrl\)\.then\(setDetail\)/);
   assert.match(app, /fetchSessions\(authToken, backendUrl\)/);
   assert.match(app, /fetchSessions\(authToken, backendUrl, sessionPaging\.nextOffset\)/);
   assert.match(app, /loadDetail\(selected\.id, authToken, backendUrl\)/);
+  assert.match(app, /\/api\/sessions\/\$\{id\}\?limit=\$\{detailItemLimit\}/);
   assert.match(app, /notificationPermission === "default"/);
   assert.match(app, /onClick=\{onEnableNotifications\}/);
   assert.match(app, /localStorage\.removeItem\(storedTokenKey\)/);

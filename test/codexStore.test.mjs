@@ -204,6 +204,13 @@ test("session detail includes timeline and pending user-input action", () => {
   assert.equal(detail.pendingAction.questions[0].id, "choice");
 });
 
+test("session detail can be limited for mobile rendering", () => {
+  const detail = store.getSessionDetail(sessionId, { limit: 2 });
+  assert.equal(detail.timeline.length, 2);
+  assert.equal(detail.timelineTotal, 4);
+  assert.equal(detail.timelineHasMore, true);
+});
+
 test("session detail summarizes tool calls instead of exposing raw JSON arguments", () => {
   const detail = store.getSessionDetail(sessionId);
   const item = detail.timeline.find((entry) => entry.id === "shell-1");

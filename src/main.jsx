@@ -42,7 +42,8 @@ const approvalScopeOptions = [
 ];
 const storedBackendKey = "loopilot.backendUrl";
 const storedTokenKey = "loopilot.authToken";
-const sessionPageSize = 40;
+const sessionPageSize = 16;
+const detailItemLimit = 120;
 
 function App() {
   const nativeShell = isNativeShell();
@@ -93,21 +94,26 @@ function App() {
 
   useEffect(() => {
     if (!authToken || !backendUrl) return;
-    setSessionPaging((current) => ({ ...current, loading: true }));
-    fetchSessions(authToken, backendUrl).then((page) => {
-      setSessions(page.sessions);
+    let stopped = false;
+    let socket = null;
+    let reconnectTimer = null;
+    let retryCount = 0;
+
+    function applySessionPage(page) {
+      if (stopped) return;
+      setSessions((current) => mergeSessionLists(page.sessions, current));
       setSessionPaging({ nextOffset: page.nextOffset, hasMore: page.hasMore, loading: false });
       setSelectedId((current) => current || page.sessions[0]?.id || "");
-    }).catch(() => {
-      setSessionPaging((current) => ({ ...current, loading: false }));
-    });
+    }
 
-    const socket = new WebSocket(liveUrl(backendUrl, authToken));
-    socket.onopen = () => setConnection("live");
-    socket.onclose = () => setConnection("offline");
-    socket.onerror = () => setConnection("offline");
-    socket.onmessage = (event) => {
-      const payload = JSON.parse(event.data);
+    function refreshFirstPage() {
+      setSessionPaging((current) => ({ ...current, loading: true }));
+      fetchSessions(authToken, backendUrl).then(applySessionPage).catch(() => {
+        if (!stopped) setSessionPaging((current) => ({ ...current, loading: false }));
+      });
+    }
+
+    function handleSocketPayload(payload) {
       if (payload.type === "snapshot") {
         const snapshotSessions = payload.sessions || [];
         setSessions((current) => mergeSessionLists(snapshotSessions, current));
@@ -124,8 +130,63 @@ function App() {
       if (payload.type === "outbox" || payload.type === "action" || payload.type === "bridge") {
         if (selectedIdRef.current) loadDetail(selectedIdRef.current, authToken, backendUrl).then(setDetail);
       }
+    }
+
+    function scheduleReconnect() {
+      if (stopped) return;
+      clearTimeout(reconnectTimer);
+      setConnection("connecting");
+      const delay = Math.min(1000 * 2 ** retryCount, 8000);
+      retryCount += 1;
+      reconnectTimer = setTimeout(connectSocket, delay);
+    }
+
+    function connectSocket() {
+      if (stopped) return;
+      clearTimeout(reconnectTimer);
+      if (socket) {
+        socket.onclose = null;
+        socket.onerror = null;
+        socket.close();
+      }
+      setConnection("connecting");
+      socket = new WebSocket(liveUrl(backendUrl, authToken));
+      socket.onopen = () => {
+        retryCount = 0;
+        setConnection("live");
+      };
+      socket.onclose = scheduleReconnect;
+      socket.onerror = () => {
+        setConnection("offline");
+        socket?.close();
+      };
+      socket.onmessage = (event) => handleSocketPayload(JSON.parse(event.data));
+    }
+
+    function resumeConnection() {
+      if (document.visibilityState === "hidden") return;
+      if (!socket || socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING) connectSocket();
+      refreshFirstPage();
+      if (selectedIdRef.current) loadDetail(selectedIdRef.current, authToken, backendUrl).then(setDetail);
+    }
+
+    refreshFirstPage();
+    connectSocket();
+    window.addEventListener("online", resumeConnection);
+    window.addEventListener("focus", resumeConnection);
+    document.addEventListener("visibilitychange", resumeConnection);
+    return () => {
+      stopped = true;
+      clearTimeout(reconnectTimer);
+      window.removeEventListener("online", resumeConnection);
+      window.removeEventListener("focus", resumeConnection);
+      document.removeEventListener("visibilitychange", resumeConnection);
+      if (socket) {
+        socket.onclose = null;
+        socket.onerror = null;
+        socket.close();
+      }
     };
-    return () => socket.close();
   }, [authToken, backendUrl]);
 
   useEffect(() => {
@@ -928,7 +989,7 @@ async function fetchSessions(authToken, backendUrl, offset = 0) {
 }
 
 async function loadDetail(id, authToken, backendUrl) {
-  const response = await authedFetch(`/api/sessions/${id}`, authToken, {}, backendUrl);
+  const response = await authedFetch(`/api/sessions/${id}?limit=${detailItemLimit}`, authToken, {}, backendUrl);
   const data = await response.json();
   return data.session;
 }
