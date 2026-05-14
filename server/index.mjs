@@ -39,6 +39,19 @@ const PAIR_ATTEMPT_WINDOW_MS = 5 * 60 * 1000;
 ensureStateDirs();
 
 app.use(express.json({ limit: "1mb" }));
+app.use(corsForShellClients);
+
+function corsForShellClients(req, res, next) {
+  const origin = req.headers.origin;
+  if (isAllowedShellOrigin(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Vary", "Origin");
+  }
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  return next();
+}
 
 app.get("/api/health", (_req, res) => {
   res.json({
@@ -202,6 +215,22 @@ async function startTunnel(targetPort) {
     tunnelHandle = await startPublicTunnel(targetPort);
   } catch (error) {
     console.error(`Unable to start public tunnel: ${error.message}`);
+  }
+}
+
+function isAllowedShellOrigin(origin) {
+  if (!origin) return false;
+  const explicit = String(process.env.LOOPILOT_ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (explicit.includes(origin)) return true;
+  try {
+    const url = new URL(origin);
+    if (["capacitor:", "ionic:"].includes(url.protocol)) return true;
+    return ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  } catch {
+    return false;
   }
 }
 

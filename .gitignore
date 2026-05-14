@@ -5,3 +5,7 @@ build/
 .tmp/
 .env
 *.log
+*.apk
+*.aab
+*.jks
+*.keystore

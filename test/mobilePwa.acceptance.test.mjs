@@ -4,7 +4,11 @@ import test from "node:test";
 
 const html = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const manifest = JSON.parse(fs.readFileSync(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"));
+const packageJson = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+const capacitorConfig = JSON.parse(fs.readFileSync(new URL("../capacitor.config.json", import.meta.url), "utf8"));
+const androidManifest = fs.readFileSync(new URL("../android/app/src/main/AndroidManifest.xml", import.meta.url), "utf8");
 const serviceWorker = fs.readFileSync(new URL("../public/sw.js", import.meta.url), "utf8");
+const server = fs.readFileSync(new URL("../server/index.mjs", import.meta.url), "utf8");
 const app = fs.readFileSync(new URL("../src/main.jsx", import.meta.url), "utf8");
 const css = fs.readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
 
@@ -96,16 +100,17 @@ test("phone layout exposes drawer navigation, scrim dismissal, and safe-area con
 });
 
 test("critical mobile actions remain reachable from the authenticated workspace", () => {
+  assert.match(app, /const storedBackendKey = "loopilot\.backendUrl"/);
+  assert.match(app, /const nativeShell = isNativeShell\(\)/);
   assert.match(app, /localStorage\.setItem\(storedTokenKey, token\)/);
   assert.match(app, /placeholder="6 位配对码或 token"/);
   assert.match(app, /配对失败，请检查 6 位配对码/);
-  assert.match(app, /\/\^\\d\{6\}\$\/\.test\(credential\) \? await exchangePairingCode\(credential\) : credential/);
-  assert.match(app, /fetch\("\/api\/pair"/);
-  assert.match(app, /const protocol = location\.protocol === "https:" \? "wss:" : "ws:"/);
-  assert.match(app, /new WebSocket\(`\$\{protocol\}\/\/\$\{location\.host\}\/live\?token=/);
-  assert.match(app, /if \(payload\.type === "snapshot"\) \{[\s\S]+loadDetail\(selectedId, authToken\)\.then\(setDetail\);[\s\S]+}/);
-  assert.match(app, /fetchSessions\(authToken\)/);
-  assert.match(app, /loadDetail\(selected\.id, authToken\)/);
+  assert.match(app, /exchangePairingCode\(credential, nextBackendUrl \|\| backendUrl\)/);
+  assert.match(app, /fetch\(apiUrl\("\/api\/pair", backendUrl\)/);
+  assert.match(app, /new WebSocket\(liveUrl\(backendUrl, authToken\)\)/);
+  assert.match(app, /if \(payload\.type === "snapshot"\) \{[\s\S]+loadDetail\(selectedId, authToken, backendUrl\)\.then\(setDetail\);[\s\S]+}/);
+  assert.match(app, /fetchSessions\(authToken, backendUrl\)/);
+  assert.match(app, /loadDetail\(selected\.id, authToken, backendUrl\)/);
   assert.match(app, /notificationPermission === "default"/);
   assert.match(app, /onClick=\{onEnableNotifications\}/);
   assert.match(app, /localStorage\.removeItem\(storedTokenKey\)/);
@@ -129,16 +134,16 @@ test("critical mobile actions remain reachable from the authenticated workspace"
   assert.match(app, /\.\.\.\(canChooseApprovalScope \? \{ scope: approvalScope \} : \{\}\)/);
   assert.match(app, /disabled=\{sending \|\| !message\.trim\(\) \|\| !session\?\.id\}/);
   assert.match(app, /body: JSON\.stringify\(\{ message, model, reasoning, approvalPolicy \}\)/);
-  assert.match(app, /onSent=\{\(\) => current\?\.id && loadDetail\(current\.id, authToken\)\.then\(setDetail\)\}/);
+  assert.match(app, /onSent=\{\(\) => current\?\.id && loadDetail\(current\.id, authToken, backendUrl\)\.then\(setDetail\)\}/);
 });
 
 test("timeline renders markdown, local images, and compact tool summaries", () => {
-  assert.match(app, /<TimelineItem key=\{`\$\{item\.id\}-\$\{index\}`\} item=\{item\} sessionId=\{session\.id\} authToken=\{authToken\} \/>/);
-  assert.match(app, /function MarkdownContent\(\{ text, sessionId, authToken \}\)/);
-  assert.match(app, /function renderMarkdownBlocks\(text, sessionId, authToken\)/);
-  assert.match(app, /function renderInline\(text, sessionId, authToken, keyPrefix\)/);
-  assert.match(app, /function ImageBlock\(\{ src, alt, sessionId, authToken \}\)/);
-  assert.match(app, /fetch\(`\/api\/sessions\/\$\{encodeURIComponent\(sessionId\)\}\/media\?path=\$\{encodeURIComponent\(imagePathFromMarkdown\(imageSrc\)\)\}`/);
+  assert.match(app, /<TimelineItem key=\{`\$\{item\.id\}-\$\{index\}`\} item=\{item\} sessionId=\{session\.id\} authToken=\{authToken\} backendUrl=\{backendUrl\} \/>/);
+  assert.match(app, /function MarkdownContent\(\{ text, sessionId, authToken, backendUrl \}\)/);
+  assert.match(app, /function renderMarkdownBlocks\(text, sessionId, authToken, backendUrl\)/);
+  assert.match(app, /function renderInline\(text, sessionId, authToken, backendUrl, keyPrefix\)/);
+  assert.match(app, /function ImageBlock\(\{ src, alt, sessionId, authToken, backendUrl \}\)/);
+  assert.match(app, /fetch\(apiUrl\(`\/api\/sessions\/\$\{encodeURIComponent\(sessionId\)\}\/media\?path=\$\{encodeURIComponent\(imagePathFromMarkdown\(imageSrc\)\)\}`, backendUrl\)/);
   assert.match(app, /Authorization: `Bearer \$\{authToken\}`/);
   assert.match(app, /referrerPolicy="no-referrer"/);
   assert.match(app, /className="markdown-image"/);
@@ -177,6 +182,39 @@ test("mobile layout clamps loaded conversation content to the viewport", () => {
   assert.match(cssBlock(".markdown-code"), /white-space:\s*pre-wrap/);
   assert.match(css, /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(css, /\.control-row \.option-menu:nth-child\(3\)\s*\{[\s\S]*grid-column:\s*1 \/ -1/);
+});
+
+test("android shell keeps the web app local and connects to a configured backend", () => {
+  assert.equal(capacitorConfig.appId, "com.huangbwww.loopilot");
+  assert.equal(capacitorConfig.appName, "LooPilot");
+  assert.equal(capacitorConfig.webDir, "build");
+  assert.equal(capacitorConfig.server.androidScheme, "http");
+  assert.equal(capacitorConfig.server.cleartext, true);
+  assert.match(androidManifest, /android\.permission\.INTERNET/);
+  assert.match(androidManifest, /android:usesCleartextTraffic="true"/);
+  assert.equal(packageJson.dependencies["@capacitor/core"], "^8.3.4");
+  assert.equal(packageJson.devDependencies["@capacitor/android"], "^8.3.4");
+  assert.match(packageJson.scripts["android:sync"], /npx cap sync android/);
+  assert.match(packageJson.scripts["android:debug"], /gradlew\.bat assembleDebug/);
+
+  assert.match(app, /function readInitialBackendUrl\(nativeShell\)/);
+  assert.match(app, /if \(!nativeShell\) return location\.origin/);
+  assert.match(app, /return "";/);
+  assert.match(app, /function normalizeBackendUrl\(value\)/);
+  assert.match(app, /function defaultBackendProtocol\(text\)/);
+  assert.match(app, /host\.startsWith\("localhost:"\)/);
+  assert.match(app, /\^\\d\{1,3\}\(\\\.\\d\{1,3\}\)\{3\}\(:\\d\+\)\?\$/);
+  assert.match(app, /url\.protocol === "http:" && !isLocalHttpHost\(url\.hostname\)/);
+  assert.match(app, /function isLocalHttpHost\(hostname\)/);
+  assert.match(app, /\^100\\\.\(6\[4-9\]\|\[7-9\]\\d\|1\[01\]\\d\|12\[0-7\]\)\\\./);
+  assert.match(app, /placeholder="https:\/\/xxxx\.trycloudflare\.com 或 http:\/\/100\.x\.x\.x:4317"/);
+  assert.match(app, /function apiUrl\(pathname, backendUrl\)/);
+  assert.match(app, /function liveUrl\(backendUrl, authToken\)/);
+
+  assert.match(server, /app\.use\(corsForShellClients\)/);
+  assert.match(server, /Access-Control-Allow-Origin/);
+  assert.match(server, /capacitor:/);
+  assert.match(server, /LOOPILOT_ALLOWED_ORIGINS/);
 });
 
 test("doctor reports pairing code status without exposing the code", () => {

@@ -1,0 +1,9 @@
+{
+  "appId": "com.huangbwww.loopilot",
+  "appName": "LooPilot",
+  "webDir": "build",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  }
+}

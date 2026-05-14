@@ -16,9 +16,13 @@
     "accept:browser": "node scripts/accept-browser.mjs",
     "accept:public": "node scripts/accept-public.mjs",
     "accept:bridge": "node scripts/accept-bridge.mjs",
+    "android:sync": "npm run build && npx cap sync android",
+    "android:open": "npx cap open android",
+    "android:debug": "npm run android:sync && cd android && gradlew.bat assembleDebug -I china-mirrors.init.gradle",
     "verify": "npm run lint && npm test && npm run build && npm run doctor && npm audit --omit=dev"
   },
   "dependencies": {
+    "@capacitor/core": "^8.3.4",
     "@vitejs/plugin-react": "^5.0.4",
     "chokidar": "^4.0.3",
     "express": "^5.1.0",
@@ -29,6 +33,8 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.3.4",
+    "@capacitor/cli": "^8.3.4",
     "eslint": "^9.33.0",
     "eslint-plugin-react": "^7.37.5",
     "globals": "^16.3.0"
