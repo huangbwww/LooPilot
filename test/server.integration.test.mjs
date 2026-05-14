@@ -9,6 +9,12 @@ import WebSocket from "ws";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 
+test("development middleware loads React transform for JSX", () => {
+  const source = fs.readFileSync(path.join(projectRoot, "server", "index.mjs"), "utf8");
+  assert.match(source, /await import\("@vitejs\/plugin-react"\)/);
+  assert.match(source, /plugins:\s*\[react\(\)\]/);
+});
+
 test("local server exposes token-protected sessions, websocket sync, and queue send", async () => {
   const fixture = makeFixture();
   const port = 45217 + Math.floor(Math.random() * 1000);
