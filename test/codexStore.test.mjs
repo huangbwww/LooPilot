@@ -75,6 +75,20 @@ const rows = [
         ]
       })
     }
+  },
+  {
+    timestamp: "2026-05-13T01:00:06.000Z",
+    type: "response_item",
+    payload: {
+      type: "function_call",
+      name: "shell_command",
+      call_id: "shell-1",
+      arguments: JSON.stringify({
+        command: "npm.cmd run accept:browser",
+        workdir: "D:\\LooPilot",
+        timeout_ms: 120000
+      })
+    }
   }
 ];
 
@@ -99,7 +113,7 @@ test("lists Codex sessions from session_index and rollout files", () => {
   assert.equal(session.model, "gpt-5.5");
   assert.equal(session.reasoning, "high");
   assert.equal(session.messageCount, 2);
-  assert.equal(session.toolCount, 1);
+  assert.equal(session.toolCount, 2);
 });
 
 test("session detail includes timeline and pending user-input action", () => {
@@ -109,6 +123,15 @@ test("session detail includes timeline and pending user-input action", () => {
   assert.equal(detail.pendingAction.id, "ask-1");
   assert.equal(detail.pendingAction.kind, "input");
   assert.equal(detail.pendingAction.questions[0].id, "choice");
+});
+
+test("session detail summarizes tool calls instead of exposing raw JSON arguments", () => {
+  const detail = store.getSessionDetail(sessionId);
+  const item = detail.timeline.find((entry) => entry.id === "shell-1");
+  assert.equal(item.title, "shell_command");
+  assert.match(item.text, /运行命令：npm\.cmd run accept:browser/);
+  assert.match(item.text, /目录：D:\\LooPilot/);
+  assert.doesNotMatch(item.text, /"command"/);
 });
 
 test("remote messages and action decisions are persisted to local state", () => {

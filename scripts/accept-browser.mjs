@@ -89,7 +89,7 @@ try {
   assertIncludes(dom, "composer", "rendered composer");
   assertIncludes(dom, "option-trigger", "rendered control menu triggers");
   assertIncludes(dom, "gpt-5.5", "rendered model control");
-  assertIncludes(dom, "high", "rendered reasoning control");
+  assertIncludes(dom, "aria-label=\"Reasoning\"", "rendered reasoning control");
   assertIncludes(dom, approvalText, "rendered approval control");
   assertIncludes(dom, queueBadgeText, "rendered safe-mode queue badge");
   assertIncludes(dom, composerPlaceholderText, "rendered composer placeholder");

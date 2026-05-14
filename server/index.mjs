@@ -1,4 +1,5 @@
 import express from "express";
+import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -77,6 +78,22 @@ app.get("/api/sessions/:id", (req, res) => {
   const detail = getSessionDetail(req.params.id);
   if (!detail) return res.status(404).json({ error: "Session not found" });
   res.json({ session: detail });
+});
+
+app.get("/api/sessions/:id/media", (req, res) => {
+  const session = getSessionDetail(req.params.id);
+  if (!session) return res.status(404).json({ error: "Session not found" });
+  const filePath = String(req.query?.path || "");
+  if (!filePath || !path.isAbsolute(filePath)) return res.status(400).json({ error: "Absolute image path is required" });
+  const mediaType = imageMediaType(filePath);
+  if (!mediaType) return res.status(415).json({ error: "Unsupported media type" });
+  const realPath = safeRealpath(filePath);
+  if (!realPath || !isSessionMediaPath(session, realPath)) return res.status(403).json({ error: "Image is not referenced by this session" });
+  const stat = safeStat(realPath);
+  if (!stat?.isFile()) return res.status(404).json({ error: "Image not found" });
+  res.type(mediaType);
+  res.set("Cache-Control", "private, max-age=60");
+  res.sendFile(realPath);
 });
 
 app.post("/api/sessions/:id/messages", (req, res) => {
@@ -222,4 +239,70 @@ function isPairRateLimited(key) {
   record.count += 1;
   pairAttempts.set(key, record);
   return record.count > PAIR_ATTEMPT_LIMIT;
+}
+
+function imageMediaType(filePath) {
+  const extension = path.extname(filePath).toLowerCase();
+  return {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".bmp": "image/bmp"
+  }[extension] || "";
+}
+
+function safeStat(filePath) {
+  try {
+    return fs.statSync(filePath);
+  } catch {
+    return null;
+  }
+}
+
+function safeRealpath(filePath) {
+  try {
+    return fs.realpathSync(filePath);
+  } catch {
+    return "";
+  }
+}
+
+function isSessionMediaPath(session, realPath) {
+  const allowed = new Set();
+  for (const item of session.timeline || []) {
+    for (const src of markdownImageSources(item.text || "")) {
+      const normalized = normalizeMediaPath(src);
+      if (!normalized || !path.isAbsolute(normalized)) continue;
+      const referencedRealPath = safeRealpath(normalized);
+      if (referencedRealPath) allowed.add(normalizePathKey(referencedRealPath));
+    }
+  }
+  return allowed.has(normalizePathKey(realPath));
+}
+
+function markdownImageSources(text) {
+  return [...String(text || "").matchAll(/!\[[^\]]*]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g)].map((match) => match[1]);
+}
+
+function normalizeMediaPath(value) {
+  let input = String(value || "").trim();
+  try {
+    input = decodeURIComponent(input);
+  } catch {
+    return "";
+  }
+  if (/^file:\/\/\//i.test(input)) {
+    input = input.replace(/^file:\/\/\//i, "");
+    if (/^[A-Za-z]:\//.test(input)) return input.replace(/\//g, "\\");
+    return `/${input}`;
+  }
+  if (/^file:\/\//i.test(input)) return input.replace(/^file:\/\//i, "");
+  return input;
+}
+
+function normalizePathKey(filePath) {
+  const normalized = path.normalize(filePath);
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }

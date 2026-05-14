@@ -9,24 +9,26 @@ const app = fs.readFileSync(new URL("../src/main.jsx", import.meta.url), "utf8")
 const css = fs.readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
 
 function cssBlock(selector, source = css) {
+  const normalized = source.replace(/\r\n/g, "\n");
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = source.match(new RegExp(`${escaped}\\s*\\{(?<body>[^}]*)\\}`));
+  const match = normalized.match(new RegExp(`${escaped}\\s*\\{(?<body>[^}]*)\\}`));
   assert.ok(match, `Expected CSS block for ${selector}`);
   return match.groups.body;
 }
 
 function mediaBlock(query) {
-  const start = css.indexOf(query);
+  const normalized = css.replace(/\r\n/g, "\n");
+  const start = normalized.indexOf(query);
   assert.notEqual(start, -1, `Expected media query ${query}`);
 
-  const firstBrace = css.indexOf("{", start);
+  const firstBrace = normalized.indexOf("{", start);
   assert.notEqual(firstBrace, -1, `Expected opening brace for ${query}`);
 
   let depth = 0;
-  for (let index = firstBrace; index < css.length; index += 1) {
-    if (css[index] === "{") depth += 1;
-    if (css[index] === "}") depth -= 1;
-    if (depth === 0) return css.slice(firstBrace + 1, index);
+  for (let index = firstBrace; index < normalized.length; index += 1) {
+    if (normalized[index] === "{") depth += 1;
+    if (normalized[index] === "}") depth -= 1;
+    if (depth === 0) return normalized.slice(firstBrace + 1, index);
   }
 
   assert.fail(`Expected closing brace for ${query}`);
@@ -88,6 +90,9 @@ test("phone layout exposes drawer navigation, scrim dismissal, and safe-area con
   assert.match(cssBlock(".scrim", mobile), /inset:\s*0/);
   assert.match(cssBlock(".workspace", mobile), /height:\s*100svh/);
   assert.match(cssBlock(".mobile-only", mobile), /display:\s*grid/);
+  assert.match(cssBlock(".session-surface"), /overflow-x:\s*hidden/);
+  assert.match(cssBlock(".session-surface"), /overflow-y:\s*auto/);
+  assert.match(cssBlock(".choice-grid", mobile), /grid-template-columns:\s*1fr/);
 });
 
 test("critical mobile actions remain reachable from the authenticated workspace", () => {
@@ -125,6 +130,26 @@ test("critical mobile actions remain reachable from the authenticated workspace"
   assert.match(app, /disabled=\{sending \|\| !message\.trim\(\) \|\| !session\?\.id\}/);
   assert.match(app, /body: JSON\.stringify\(\{ message, model, reasoning, approvalPolicy \}\)/);
   assert.match(app, /onSent=\{\(\) => current\?\.id && loadDetail\(current\.id, authToken\)\.then\(setDetail\)\}/);
+});
+
+test("timeline renders markdown, local images, and compact tool summaries", () => {
+  assert.match(app, /<TimelineItem key=\{`\$\{item\.id\}-\$\{index\}`\} item=\{item\} sessionId=\{session\.id\} authToken=\{authToken\} \/>/);
+  assert.match(app, /function MarkdownContent\(\{ text, sessionId, authToken \}\)/);
+  assert.match(app, /function renderMarkdownBlocks\(text, sessionId, authToken\)/);
+  assert.match(app, /function renderInline\(text, sessionId, authToken, keyPrefix\)/);
+  assert.match(app, /function ImageBlock\(\{ src, alt, sessionId, authToken \}\)/);
+  assert.match(app, /fetch\(`\/api\/sessions\/\$\{encodeURIComponent\(sessionId\)\}\/media\?path=\$\{encodeURIComponent\(imagePathFromMarkdown\(imageSrc\)\)\}`/);
+  assert.match(app, /Authorization: `Bearer \$\{authToken\}`/);
+  assert.match(app, /referrerPolicy="no-referrer"/);
+  assert.match(app, /className="markdown-image"/);
+  assert.match(app, /className="tool-summary"/);
+  assert.match(app, /<details className="tool-details">/);
+  assert.match(app, /<summary>查看工具输出<\/summary>/);
+
+  assert.match(css, /\.markdown-body,/);
+  assert.match(css, /\.markdown-image\s*\{/);
+  assert.match(css, /\.tool-summary\s*\{/);
+  assert.match(css, /\.tool-details\s*\{/);
 });
 
 test("session drawer groups conversations by project like Codex desktop", () => {
