@@ -165,8 +165,10 @@ app.post("/api/sessions/:id/messages", (req, res) => {
 
 app.post("/api/sessions/:id/actions/:actionId", (req, res) => {
   const decision = actionDecisionFromBody(req.body);
-  const record = resolveAction(req.params.id, req.params.actionId, decision);
   const bridgeResolved = resolveBridgeRequest(req.params.actionId, decision);
+  const record = resolveAction(req.params.id, req.params.actionId, decision, {
+    status: bridgeResolved ? "sent" : "not_active"
+  });
   broadcast({ type: "action", record });
   res.status(202).json({ record, bridgeResolved });
 });

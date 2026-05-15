@@ -152,7 +152,7 @@ export function appendBridgeJob(sessionId, record) {
   fs.appendFileSync(path.join(JOBS_DIR, `${sessionId}.jsonl`), `${JSON.stringify(record)}\n`, "utf8");
 }
 
-export function resolveAction(sessionId, actionId, decision) {
+export function resolveAction(sessionId, actionId, decision, options = {}) {
   ensureStateDirs();
   const normalized = normalizeDecisionRecord(decision);
   const record = {
@@ -162,7 +162,7 @@ export function resolveAction(sessionId, actionId, decision) {
     decision: normalized.decision,
     ...(normalized.answers ? { answers: normalized.answers } : {}),
     ...(normalized.scope ? { scope: normalized.scope } : {}),
-    status: "queued",
+    status: options.status || "queued",
     createdAt: new Date().toISOString()
   };
   fs.appendFileSync(path.join(OUTBOX_DIR, `${sessionId}.actions.jsonl`), `${JSON.stringify(record)}\n`, "utf8");
@@ -236,7 +236,10 @@ function parseSessionFile(filePath, { detail, maxDetailItems = DEFAULT_DETAIL_IT
     if (row.type === "event_msg") {
       const eventType = row.payload?.type;
       if (eventType === "task_started") status = "running";
-      if (["task_complete", "task_completed", "turn_complete", "task_stopped"].includes(eventType)) status = "idle";
+      if (["task_complete", "task_completed", "turn_complete", "task_stopped"].includes(eventType)) {
+        status = "idle";
+        pendingAction = null;
+      }
       if (eventType === "token_count") {
         const usage = row.payload?.info?.total_token_usage || row.payload?.info?.last_token_usage;
         if (usage) {

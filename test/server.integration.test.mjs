@@ -168,6 +168,8 @@ test("local server exposes token-protected sessions, websocket sync, and queue s
     });
     assert.equal(action.status, 202);
     assert.equal(action.body.record.decision, "approved");
+    assert.equal(action.body.record.status, "not_active");
+    assert.equal(action.body.bridgeResolved, false);
     assert.deepEqual(action.body.record.answers, { mode: ["Custom"] });
     assert.equal(action.body.record.scope, "session");
 

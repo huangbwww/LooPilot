@@ -10,11 +10,13 @@ const sessionId = "019e1c98-c592-7dc2-a684-ffec77c153b8";
 const bridgeSessionId = "019e1c98-c592-7dc2-a684-ffec77c153b9";
 const subagentSessionId = "019e1c98-c592-7dc2-a684-ffec77c153ba";
 const outboxOrderSessionId = "019e1c98-c592-7dc2-a684-ffec77c153bb";
+const completedPendingSessionId = "019e1c98-c592-7dc2-a684-ffec77c153bc";
 const rolloutDir = path.join(codexHome, "sessions", "2026", "05", "13");
 const rolloutPath = path.join(rolloutDir, `rollout-2026-05-13T09-00-00-${sessionId}.jsonl`);
 const bridgeRolloutPath = path.join(rolloutDir, `rollout-2026-05-13T09-01-00-${bridgeSessionId}.jsonl`);
 const subagentRolloutPath = path.join(rolloutDir, `rollout-2026-05-13T09-02-00-${subagentSessionId}.jsonl`);
 const outboxOrderRolloutPath = path.join(rolloutDir, `rollout-2026-05-13T09-03-00-${outboxOrderSessionId}.jsonl`);
+const completedPendingRolloutPath = path.join(rolloutDir, `rollout-2026-05-13T09-04-00-${completedPendingSessionId}.jsonl`);
 
 process.env.CODEX_HOME = codexHome;
 process.chdir(root);
@@ -26,7 +28,8 @@ fs.writeFileSync(
     JSON.stringify({ id: sessionId, thread_name: "Test Session", updated_at: "2026-05-13T01:00:00.000Z" }),
     JSON.stringify({ id: bridgeSessionId, thread_name: "Bridge Pending", updated_at: "2026-05-13T01:00:00.000Z" }),
     JSON.stringify({ id: subagentSessionId, thread_name: "Review branch", updated_at: "2026-05-13T01:00:00.000Z" }),
-    JSON.stringify({ id: outboxOrderSessionId, thread_name: "Outbox Order", updated_at: "2026-05-13T01:00:00.000Z" })
+    JSON.stringify({ id: outboxOrderSessionId, thread_name: "Outbox Order", updated_at: "2026-05-13T01:00:00.000Z" }),
+    JSON.stringify({ id: completedPendingSessionId, thread_name: "Completed Pending", updated_at: "2026-05-13T01:00:00.000Z" })
   ].join("\n")
 );
 
@@ -141,18 +144,44 @@ fs.writeFileSync(
     payload: { id: outboxOrderSessionId, cwd: "D:\\LooPilot", model: "gpt-5.5" }
   })}\n`
 );
+fs.writeFileSync(
+  completedPendingRolloutPath,
+  [
+    JSON.stringify({
+      timestamp: "2026-05-13T01:00:00.000Z",
+      type: "session_meta",
+      payload: { id: completedPendingSessionId, cwd: "D:\\LooPilot", model: "gpt-5.5" }
+    }),
+    JSON.stringify({
+      timestamp: "2026-05-13T01:00:01.000Z",
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        name: "request_user_input",
+        call_id: "old-ask",
+        arguments: JSON.stringify({ questions: [{ id: "choice", question: "Old prompt", options: [] }] })
+      }
+    }),
+    JSON.stringify({
+      timestamp: "2026-05-13T01:00:02.000Z",
+      type: "event_msg",
+      payload: { type: "task_complete" }
+    })
+  ].join("\n")
+);
 fs.utimesSync(rolloutPath, new Date("2026-05-13T02:00:00.000Z"), new Date("2026-05-13T02:00:00.000Z"));
 fs.utimesSync(bridgeRolloutPath, new Date("2026-05-13T01:01:00.000Z"), new Date("2026-05-13T01:01:00.000Z"));
 fs.utimesSync(subagentRolloutPath, new Date("2026-05-13T01:02:00.000Z"), new Date("2026-05-13T01:02:00.000Z"));
 fs.utimesSync(outboxOrderRolloutPath, new Date("2026-05-13T01:03:00.000Z"), new Date("2026-05-13T01:03:00.000Z"));
+fs.utimesSync(completedPendingRolloutPath, new Date("2026-05-13T01:04:00.000Z"), new Date("2026-05-13T01:04:00.000Z"));
 
 const store = await import(`../server/codexStore.mjs?case=${Date.now()}`);
 
 test("lists Codex sessions from session_index and rollout files", () => {
   const sessions = store.listSessions();
   const session = sessions.find((item) => item.id === sessionId);
-  assert.equal(sessions.length, 4);
-  assert.equal(sessions.total, 4);
+  assert.equal(sessions.length, 5);
+  assert.equal(sessions.total, 5);
   assert.equal(sessions.hasMore, false);
   assert.equal(session.title, "Test Session");
   assert.equal(session.status, "waiting");
@@ -170,13 +199,13 @@ test("prefers rollout file mtime when session_index timestamps are stale", () =>
 test("paginates session summaries before hydrating details", () => {
   const firstPage = store.listSessionPage({ limit: 2 });
   assert.equal(firstPage.sessions.length, 2);
-  assert.equal(firstPage.total, 4);
+  assert.equal(firstPage.total, 5);
   assert.equal(firstPage.hasMore, true);
   assert.equal(firstPage.nextOffset, 2);
 
   const secondPage = store.listSessionPage({ limit: 2, offset: 2 });
   assert.equal(secondPage.sessions.length, 2);
-  assert.equal(secondPage.hasMore, false);
+  assert.equal(secondPage.hasMore, true);
   assert.equal(secondPage.nextOffset, 4);
   assert.notEqual(firstPage.sessions[0].id, secondPage.sessions[0].id);
 });
@@ -274,4 +303,11 @@ test("resolved bridge requests are not shown as pending actions", () => {
   store.resolveAction(bridgeSessionId, "approval-1", "approved");
   detail = store.getSessionDetail(bridgeSessionId);
   assert.equal(detail.pendingAction, null);
+});
+
+test("completed turns do not keep stale pending action indicators", () => {
+  const detail = store.getSessionDetail(completedPendingSessionId);
+  assert.equal(detail.pendingAction, null);
+  assert.equal(detail.status, "idle");
+  assert.equal(store.listSessions().find((session) => session.id === completedPendingSessionId).pendingAction, null);
 });

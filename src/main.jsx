@@ -1536,6 +1536,7 @@ function outboxItemKey(item) {
 
 function statusPrecedence(status) {
   const order = {
+    not_active: 1,
     queued: 1,
     dispatching: 2,
     needs_response: 3,
@@ -1560,6 +1561,24 @@ function outboxItemTime(item) {
 function formatOutboxRecord(record) {
   const status = String(record?.status || "");
   if (!status && !record?.message && !record?.decision && !record?.actionId) return null;
+  if (record?.actionId && status === "not_active") {
+    return {
+      key: `${record.key}-not-active`,
+      tone: "synced",
+      state: "已忽略",
+      message: outboxRecordMessage(record),
+      detail: "这个确认请求已不在当前 Codex 后端队列，手机端已清除提示"
+    };
+  }
+  if (record?.actionId && status === "queued") {
+    return {
+      key: `${record.key}-action-queued`,
+      tone: "waiting",
+      state: "已记录",
+      message: outboxRecordMessage(record),
+      detail: "确认响应已记录，等待同步状态刷新"
+    };
+  }
   if (record?.error || status.includes("failed")) {
     return {
       key: `${record.key}-failed`,
@@ -1638,6 +1657,7 @@ function statusTone(status) {
 }
 
 function outboxStatusText(status) {
+  if (status === "not_active") return "已忽略";
   if (status === "queued") return "排队中";
   if (status === "dispatching") return "发送中";
   if (status === "sent") return "完成";
