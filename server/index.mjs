@@ -4,6 +4,7 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import chokidar from "chokidar";
+import QRCode from "qrcode";
 import { WebSocketServer } from "ws";
 import { getAuthToken, getPairingCode, isPairingCodeValid, isWsAuthorized, requireAuth, rotatePairingCode } from "./auth.mjs";
 import { dispatchRemoteMessage, resolveBridgeRequest } from "./codexBridge.mjs";
@@ -214,6 +215,7 @@ server.listen(port, async () => {
   console.log(`LooPilot running at ${localUrl}`);
   console.log(`Authorized URL: ${localUrlWithToken}`);
   console.log(`Pairing code: ${pairingCode}`);
+  await printPairingQr(localUrl, pairingCode);
   console.log(`Reading Codex sessions from ${getCodexHome()}`);
   if (args.has("--public")) {
     await startTunnel(port);
@@ -229,9 +231,22 @@ function broadcast(payload) {
 
 async function startTunnel(targetPort) {
   try {
-    tunnelHandle = await startPublicTunnel(targetPort);
+    tunnelHandle = await startPublicTunnel(targetPort, {
+      onUrl: (publicUrl) => printPairingQr(publicUrl, pairingCode)
+    });
   } catch (error) {
     console.error(`Unable to start public tunnel: ${error.message}`);
+  }
+}
+
+async function printPairingQr(serverUrl, code) {
+  try {
+    const payload = JSON.stringify({ type: "loopilot-pairing", version: 1, server: serverUrl, code });
+    const qr = await QRCode.toString(payload, { type: "terminal", small: true, margin: 1 });
+    console.log(`Pairing QR (${serverUrl}):`);
+    console.log(qr);
+  } catch (error) {
+    console.error(`Unable to generate pairing QR: ${error.message}`);
   }
 }
 

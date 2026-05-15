@@ -12,6 +12,6 @@ test("public tunnel output does not embed access tokens in URLs", () => {
 
 test("public tunnel pins metrics polling to the spawned cloudflared process", () => {
   assert.match(tunnelSource, /"--metrics", metricsAddress/);
-  assert.match(tunnelSource, /pollMetricsForTunnelUrl\(child, metricsAddress\)/);
+  assert.match(tunnelSource, /pollMetricsForTunnelUrl\(child, metricsAddress(?:, options\.onUrl)?\)/);
   assert.doesNotMatch(tunnelSource, /127\.0\.0\.1:20241\/metrics/);
 });

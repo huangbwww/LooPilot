@@ -103,6 +103,15 @@ test("critical mobile actions remain reachable from the authenticated workspace"
   assert.match(app, /const storedBackendKey = "loopilot\.backendUrl"/);
   assert.match(app, /const nativeShell = isNativeShell\(\)/);
   assert.match(app, /localStorage\.setItem\(storedTokenKey, token\)/);
+  assert.match(app, /import QrScanner from "qr-scanner"/);
+  assert.match(app, /qr-scanner-worker\.min\.js\?url/);
+  assert.match(app, /function PairingScanner\(\{ onResult, onClose, onError \}\)/);
+  assert.match(app, /new QrScanner\(/);
+  assert.match(app, /preferredCamera: "environment"/);
+  assert.match(app, /QrScanner\.scanImage/);
+  assert.match(app, /function parsePairingQr\(rawText\)/);
+  assert.match(app, /type="submit" disabled=\{scanning\}/);
+  assert.match(app, /className="scan-button"/);
   assert.match(app, /placeholder="6 位配对码或 token"/);
   assert.match(app, /配对失败，请检查 6 位配对码/);
   assert.match(app, /exchangePairingCode\(credential, nextBackendUrl \|\| backendUrl\)/);
@@ -127,15 +136,15 @@ test("critical mobile actions remain reachable from the authenticated workspace"
   assert.match(app, /<SessionList[\s\S]+onSelect=\{\(id\) => \{[\s\S]+setDrawerOpen\(false\);/);
   assert.match(app, /hasMore=\{sessionPaging\.hasMore\}/);
   assert.match(app, /function mergeSessionLists\(primary, secondary\)/);
-  assert.match(app, /const approvalPolicyOptions = \[/);
+  assert.match(app, /const permissionPresetOptions = \[/);
   assert.match(app, /const approvalScopeOptions = \[/);
-  assert.match(app, /const sandboxModeOptions = \[/);
-  assert.match(app, /const \[approvalPolicy, setApprovalPolicy\] = useState\(approvalPolicyOptions\[0\]\.value\)/);
-  assert.match(app, /const \[sandboxMode, setSandboxMode\] = useState\(sandboxModeOptions\[0\]\.value\)/);
+  assert.match(app, /value: "default", label: "默认权限", approvalPolicy: "on-request", sandboxMode: "workspace-write"/);
+  assert.match(app, /value: "auto-review", label: "自动审查", approvalPolicy: "never", sandboxMode: "read-only"/);
+  assert.match(app, /value: "full-access", label: "完全访问权限", approvalPolicy: "never", sandboxMode: "danger-full-access"/);
+  assert.match(app, /const \[permissionPreset, setPermissionPreset\] = useState\("full-access"\)/);
   assert.match(app, /<OptionMenu icon=\{<Sparkles size=\{15\} \/>\} label="Model" value=\{model\}/);
   assert.match(app, /<OptionMenu icon=\{<Settings2 size=\{15\} \/>\} label="Reasoning" value=\{reasoning\}/);
-  assert.match(app, /label="Approval"[\s\S]+value=\{approvalPolicy\}/);
-  assert.match(app, /label="Sandbox" value=\{sandboxMode\}/);
+  assert.match(app, /label="权限"[\s\S]+value=\{permissionPreset\}/);
   assert.match(app, /className="permission-scope"/);
   assert.match(app, /<textarea[\s\S]+onChange=\{\(event\) => setMessage\(event\.target\.value\)\}/);
   assert.match(app, /const \[customAnswers, setCustomAnswers\] = useState\(\{\}\)/);
@@ -145,7 +154,9 @@ test("critical mobile actions remain reachable from the authenticated workspace"
   assert.match(app, /placeholder="Custom answer"/);
   assert.match(app, /\.\.\.\(canChooseApprovalScope \? \{ scope: approvalScope \} : \{\}\)/);
   assert.match(app, /disabled=\{sending \|\| !message\.trim\(\) \|\| !session\?\.id\}/);
-  assert.match(app, /body: JSON\.stringify\(\{ message, model, reasoning, approvalPolicy, sandboxMode \}\)/);
+  assert.match(app, /permissionPreset: permission\.value/);
+  assert.match(app, /approvalPolicy: permission\.approvalPolicy/);
+  assert.match(app, /sandboxMode: permission\.sandboxMode/);
   assert.match(app, /onSent=\{\(\) => current\?\.id && loadDetail\(current\.id, authToken, backendUrl\)\.then\(setDetail\)\}/);
 });
 
@@ -198,6 +209,9 @@ test("mobile layout clamps loaded conversation content to the viewport", () => {
   assert.match(cssBlock(".session-surface"), /max-width:\s*100vw/);
   assert.match(cssBlock(".session-surface"), /z-index:\s*1/);
   assert.match(css, /\.composer\s*\{[\s\S]*z-index:\s*400[\s\S]*overflow:\s*visible/);
+  assert.match(css, /\.scanner-panel\s*\{/);
+  assert.match(css, /\.scanner-card video\s*\{/);
+  assert.match(css, /\.auth-actions\s*\{/);
   assert.match(cssBlock(".option-list"), /z-index:\s*120/);
   assert.match(cssBlock(".option-list"), /max-height:\s*min\(320px,\s*42vh\)/);
   assert.match(cssBlock(".timeline"), /width:\s*100%/);
@@ -215,6 +229,7 @@ test("android shell keeps the web app local and connects to a configured backend
   assert.equal(capacitorConfig.server.androidScheme, "http");
   assert.equal(capacitorConfig.server.cleartext, true);
   assert.match(androidManifest, /android\.permission\.INTERNET/);
+  assert.match(androidManifest, /android\.permission\.CAMERA/);
   assert.match(androidManifest, /android:usesCleartextTraffic="true"/);
   assert.equal(packageJson.dependencies["@capacitor/core"], "^8.3.4");
   assert.equal(packageJson.devDependencies["@capacitor/android"], "^8.3.4");

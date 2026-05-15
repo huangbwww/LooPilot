@@ -14,7 +14,7 @@ const token = `accept-browser-${Date.now().toString(36)}`;
 const pairingCode = "123456";
 const queueBadgeText = "\u961f\u5217";
 const composerPlaceholderText = "\u7ed9\u5f53\u524d Codex \u4f1a\u8bdd\u53d1\u9001\u6d88\u606f";
-const approvalText = "\u6309\u9700\u786e\u8ba4";
+const permissionText = "\u5b8c\u5168\u8bbf\u95ee\u6743\u9650";
 
 fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
 fs.mkdirSync(path.dirname(domPath), { recursive: true });
@@ -90,7 +90,7 @@ try {
   assertIncludes(dom, "option-trigger", "rendered control menu triggers");
   assertIncludes(dom, "gpt-5.5", "rendered model control");
   assertIncludes(dom, "aria-label=\"Reasoning\"", "rendered reasoning control");
-  assertIncludes(dom, approvalText, "rendered approval control");
+  assertIncludes(dom, permissionText, "rendered permission control");
   assertIncludes(dom, queueBadgeText, "rendered safe-mode queue badge");
   assertIncludes(dom, composerPlaceholderText, "rendered composer placeholder");
 

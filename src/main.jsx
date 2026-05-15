@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Bell,
   Bot,
+  Camera,
   Check,
+  ArrowDown,
   ChevronDown,
   ChevronLeft,
   Circle,
@@ -20,6 +22,8 @@ import {
   Wifi,
   X
 } from "lucide-react";
+import QrScanner from "qr-scanner";
+import qrScannerWorkerUrl from "qr-scanner/qr-scanner-worker.min.js?url";
 import {
   getNotificationPermission,
   notifyPendingAction,
@@ -28,27 +32,25 @@ import {
 } from "./notifications.js";
 import "./styles.css";
 
+QrScanner.WORKER_PATH = qrScannerWorkerUrl;
+
 const modelOptions = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex"];
 const reasoningOptions = ["low", "medium", "high", "xhigh"];
-const approvalPolicyOptions = [
-  { value: "on-request", label: "按需确认" },
-  { value: "on-failure", label: "失败时确认" },
-  { value: "never", label: "完全访问权限" }
+const permissionPresetOptions = [
+  { value: "default", label: "默认权限", approvalPolicy: "on-request", sandboxMode: "workspace-write" },
+  { value: "auto-review", label: "自动审查", approvalPolicy: "never", sandboxMode: "read-only" },
+  { value: "full-access", label: "完全访问权限", approvalPolicy: "never", sandboxMode: "danger-full-access" }
 ];
 const approvalScopeOptions = [
   { value: "turn", label: "仅本次" },
   { value: "session", label: "本会话" },
   { value: "always", label: "始终允许" }
 ];
-const sandboxModeOptions = [
-  { value: "danger-full-access", label: "完全访问" },
-  { value: "workspace-write", label: "项目写入" },
-  { value: "read-only", label: "只读" }
-];
 const storedBackendKey = "loopilot.backendUrl";
 const storedTokenKey = "loopilot.authToken";
 const sessionPageSize = 16;
 const detailItemLimit = 120;
+const latestScrollThreshold = 96;
 
 function App() {
   const nativeShell = isNativeShell();
@@ -63,8 +65,7 @@ function App() {
   const [connection, setConnection] = useState("connecting");
   const [model, setModel] = useState(modelOptions[0]);
   const [reasoning, setReasoning] = useState("high");
-  const [approvalPolicy, setApprovalPolicy] = useState(approvalPolicyOptions[0].value);
-  const [sandboxMode, setSandboxMode] = useState(sandboxModeOptions[0].value);
+  const [permissionPreset, setPermissionPreset] = useState("full-access");
   const [notificationPermission, setNotificationPermission] = useState(() => getNotificationPermission());
   const notifiedActions = useRef(new Set());
   const selectedIdRef = useRef("");
@@ -279,10 +280,8 @@ function App() {
           reasoning={reasoning}
           setModel={setModel}
           setReasoning={setReasoning}
-          approvalPolicy={approvalPolicy}
-          setApprovalPolicy={setApprovalPolicy}
-          sandboxMode={sandboxMode}
-          setSandboxMode={setSandboxMode}
+          permissionPreset={permissionPreset}
+          setPermissionPreset={setPermissionPreset}
           onSent={() => current?.id && loadDetail(current.id, authToken, backendUrl).then(setDetail)}
         />
         {(!authToken || !backendUrl) && (
@@ -308,12 +307,17 @@ function AuthGate({ backendUrl, requireBackendUrl, onSave }) {
   const [serverUrl, setServerUrl] = useState(() => backendUrl || "");
   const [value, setValue] = useState("");
   const [error, setError] = useState("");
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scanning, setScanning] = useState(false);
   async function submit(event) {
     event.preventDefault();
-    const credential = value.trim();
+    await submitCredential(value, serverUrl);
+  }
+  const submitCredential = useCallback(async (rawCredential, rawServerUrl) => {
+    const credential = String(rawCredential || "").trim();
     if (!credential) return;
     setError("");
-    const nextBackendUrl = normalizeBackendUrl(serverUrl);
+    const nextBackendUrl = normalizeBackendUrl(rawServerUrl);
     if (requireBackendUrl && !nextBackendUrl) {
       setError("请输入 LooPilot 服务器地址");
       return;
@@ -326,7 +330,23 @@ function AuthGate({ backendUrl, requireBackendUrl, onSave }) {
       return;
     }
     onSave({ token, backendUrl: nextBackendUrl || backendUrl });
-  }
+  }, [backendUrl, onSave, requireBackendUrl]);
+  const acceptPairingQr = useCallback(async (rawText) => {
+    const payload = parsePairingQr(rawText);
+    if (!payload) {
+      setError("Invalid LooPilot pairing QR code");
+      return;
+    }
+    setScannerOpen(false);
+    setScanning(true);
+    setServerUrl(payload.server);
+    setValue(payload.code);
+    try {
+      await submitCredential(payload.code, payload.server);
+    } finally {
+      setScanning(false);
+    }
+  }, [submitCredential]);
   return (
     <div className="auth-gate">
       <form onSubmit={submit}>
@@ -340,8 +360,95 @@ function AuthGate({ backendUrl, requireBackendUrl, onSave }) {
         <strong>输入访问令牌</strong>
         <input value={value} onChange={(event) => setValue(event.target.value)} placeholder="6 位配对码或 token" />
         {error && <span className="auth-error">{error}</span>}
-        <button>进入</button>
+        <div className="auth-actions">
+          <button type="submit" disabled={scanning}>{scanning ? "Connecting..." : "进入"}</button>
+          <button type="button" className="scan-button" onClick={() => setScannerOpen(true)}>
+            <Camera size={17} />
+            扫码
+          </button>
+        </div>
       </form>
+      {scannerOpen && (
+        <PairingScanner
+          onResult={acceptPairingQr}
+          onClose={() => setScannerOpen(false)}
+          onError={(message) => setError(message)}
+        />
+      )}
+    </div>
+  );
+}
+
+function PairingScanner({ onResult, onClose, onError }) {
+  const videoRef = useRef(null);
+  const scannerRef = useRef(null);
+  const [message, setMessage] = useState("Opening camera...");
+
+  useEffect(() => {
+    let stopped = false;
+    async function start() {
+      if (!videoRef.current) return;
+      try {
+        scannerRef.current = new QrScanner(
+          videoRef.current,
+          (result) => {
+            if (stopped) return;
+            onResult(typeof result === "string" ? result : result.data);
+          },
+          {
+            highlightScanRegion: true,
+            highlightCodeOutline: true,
+            preferredCamera: "environment"
+          }
+        );
+        await scannerRef.current.start();
+        if (!stopped) setMessage("Scan the QR code printed by the desktop service");
+      } catch {
+        if (!stopped) {
+          const text = "Camera unavailable. Check permission or scan from an image.";
+          setMessage(text);
+          onError(text);
+        }
+      }
+    }
+    start();
+    return () => {
+      stopped = true;
+      scannerRef.current?.stop();
+      scannerRef.current?.destroy();
+      scannerRef.current = null;
+    };
+  }, [onError, onResult]);
+
+  async function scanFile(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const result = await QrScanner.scanImage(file, { returnDetailedScanResult: true });
+      onResult(typeof result === "string" ? result : result.data);
+    } catch {
+      const text = "No LooPilot pairing QR code was found in that image";
+      setMessage(text);
+      onError(text);
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  return (
+    <div className="scanner-panel" role="dialog" aria-modal="true" aria-label="Scan pairing QR code">
+      <div className="scanner-card">
+        <div className="scanner-head">
+          <strong>扫码配对</strong>
+          <button type="button" className="icon-button" aria-label="Close scanner" onClick={onClose}><X size={18} /></button>
+        </div>
+        <video ref={videoRef} muted playsInline />
+        <span>{message}</span>
+        <label className="scan-file">
+          从图片识别
+          <input type="file" accept="image/*" onChange={scanFile} />
+        </label>
+      </div>
     </div>
   );
 }
@@ -479,16 +586,41 @@ function TopBar({ session, connection, bridgeMode, waitingCount, notificationPer
 
 function SessionSurface({ session, authToken, backendUrl }) {
   const surfaceRef = useRef(null);
+  const lastSessionIdRef = useRef("");
+  const shouldFollowLatestRef = useRef(true);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const outboxItems = useMemo(() => visibleOutboxItems(session?.outbox), [session?.outbox]);
 
   useEffect(() => {
     const element = surfaceRef.current;
     if (!element || !session?.id) return undefined;
+    const switchedSession = lastSessionIdRef.current !== session.id;
+    lastSessionIdRef.current = session.id;
     const frame = requestAnimationFrame(() => {
-      element.scrollTop = element.scrollHeight;
+      if (switchedSession || shouldFollowLatestRef.current || isScrolledNearBottom(element)) {
+        element.scrollTop = element.scrollHeight;
+        shouldFollowLatestRef.current = true;
+        setShowJumpToLatest(false);
+        return;
+      }
+      setShowJumpToLatest(true);
     });
     return () => cancelAnimationFrame(frame);
   }, [session?.id, session?.timeline?.length, session?.outbox?.length, session?.status]);
+
+  function handleSurfaceScroll(event) {
+    const nearBottom = isScrolledNearBottom(event.currentTarget);
+    shouldFollowLatestRef.current = nearBottom;
+    setShowJumpToLatest(!nearBottom);
+  }
+
+  function jumpToLatest() {
+    const element = surfaceRef.current;
+    if (!element) return;
+    shouldFollowLatestRef.current = true;
+    setShowJumpToLatest(false);
+    element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
+  }
 
   if (!session) {
     return (
@@ -501,7 +633,7 @@ function SessionSurface({ session, authToken, backendUrl }) {
   }
 
   return (
-    <div className="session-surface" ref={surfaceRef}>
+    <div className="session-surface" ref={surfaceRef} onScroll={handleSurfaceScroll}>
       <div className="status-strip">
         <Metric icon={<Circle size={12} />} label="状态" value={statusText(session.status)} tone={session.status} />
         <Metric icon={<MessageSquare size={14} />} label="消息" value={session.messageCount || 0} />
@@ -525,6 +657,11 @@ function SessionSurface({ session, authToken, backendUrl }) {
           ))}
         </div>
       )}
+      {showJumpToLatest && (
+        <button type="button" className="jump-to-latest" aria-label="跳到最新消息" onClick={jumpToLatest}>
+          <ArrowDown size={18} />
+        </button>
+      )}
     </div>
   );
 }
@@ -532,6 +669,7 @@ function SessionSurface({ session, authToken, backendUrl }) {
 function RunningIndicator() {
   return (
     <div className="running-indicator" aria-live="polite">
+      <span className="role-badge running">执行中</span>
       <span className="thinking-dot" />
       <span className="thinking-dot" />
       <span className="thinking-dot" />
@@ -635,10 +773,12 @@ function TimelineItem({ item, sessionId, authToken, backendUrl }) {
   const isTool = item.kind === "tool";
   const isToolOutput = item.kind === "tool-output";
   const preview = collapsePreview(item.text);
+  const role = timelineRole(item);
   return (
-    <article className={`timeline-item ${item.role} ${collapsed ? "collapsed" : ""}`}>
+    <article className={`timeline-item ${role.className} ${collapsed ? "collapsed" : ""}`}>
       <div className="item-head">
-        <span>{item.title}</span>
+        <span className={`role-badge ${role.className}`}>{role.label}</span>
+        <span className="item-title">{item.title}</span>
         <div className="item-head-actions">
           <time>{formatTime(item.at)}</time>
           <button
@@ -668,6 +808,18 @@ function TimelineItem({ item, sessionId, authToken, backendUrl }) {
       )}
     </article>
   );
+}
+
+function timelineRole(item) {
+  if (item.kind === "tool") return { className: "tool", label: "工具调用" };
+  if (item.kind === "tool-output") return { className: "tool-output", label: "工具输出" };
+  if (item.role === "user") return { className: "user", label: "你" };
+  if (item.role === "assistant") return { className: "assistant", label: "Codex" };
+  return { className: item.role || "system", label: item.title || "记录" };
+}
+
+function isScrolledNearBottom(element) {
+  return element.scrollHeight - element.scrollTop - element.clientHeight <= latestScrollThreshold;
 }
 
 function collapsePreview(text) {
@@ -902,14 +1054,13 @@ function Composer({
   reasoning,
   setModel,
   setReasoning,
-  approvalPolicy,
-  setApprovalPolicy,
-  sandboxMode,
-  setSandboxMode,
+  permissionPreset,
+  setPermissionPreset,
   onSent
 }) {
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
+  const permission = permissionPresetOptions.find((option) => option.value === permissionPreset) || permissionPresetOptions[0];
   async function submit(event) {
     event.preventDefault();
     if (!message.trim() || !session?.id) return;
@@ -917,7 +1068,14 @@ function Composer({
     await authedFetch(`/api/sessions/${session.id}/messages`, authToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, model, reasoning, approvalPolicy, sandboxMode })
+      body: JSON.stringify({
+        message,
+        model,
+        reasoning,
+        permissionPreset: permission.value,
+        approvalPolicy: permission.approvalPolicy,
+        sandboxMode: permission.sandboxMode
+      })
     }, backendUrl);
     setMessage("");
     setSending(false);
@@ -931,12 +1089,11 @@ function Composer({
         <OptionMenu icon={<Settings2 size={15} />} label="Reasoning" value={reasoning} options={reasoningOptions} onChange={setReasoning} />
         <OptionMenu
           icon={<ShieldCheck size={15} />}
-          label="Approval"
-          value={approvalPolicy}
-          options={approvalPolicyOptions}
-          onChange={setApprovalPolicy}
+          label="权限"
+          value={permissionPreset}
+          options={permissionPresetOptions}
+          onChange={setPermissionPreset}
         />
-        <OptionMenu icon={<TerminalSquare size={15} />} label="Sandbox" value={sandboxMode} options={sandboxModeOptions} onChange={setSandboxMode} />
       </div>
       <div className="input-row">
         <button type="button" className="icon-button" aria-label="返回"><ChevronLeft size={18} /></button>
@@ -1102,6 +1259,38 @@ function readInitialToken() {
     return tokenFromUrl;
   }
   return localStorage.getItem(storedTokenKey) || "";
+}
+
+function parsePairingQr(rawText) {
+  const text = String(rawText || "").trim();
+  if (!text) return null;
+  const fromJson = parsePairingJson(text);
+  if (fromJson) return fromJson;
+  return parsePairingUrl(text);
+}
+
+function parsePairingJson(text) {
+  try {
+    const data = JSON.parse(text);
+    const server = normalizeBackendUrl(data.server || data.backend || data.url);
+    const code = String(data.code || "").trim();
+    if (!server || !/^\d{6}$/.test(code)) return null;
+    return { server, code };
+  } catch {
+    return null;
+  }
+}
+
+function parsePairingUrl(text) {
+  try {
+    const url = new URL(text);
+    const server = normalizeBackendUrl(url.searchParams.get("server") || url.searchParams.get("backend"));
+    const code = String(url.searchParams.get("code") || "").trim();
+    if (!server || !/^\d{6}$/.test(code)) return null;
+    return { server, code };
+  } catch {
+    return null;
+  }
 }
 
 function normalizeBackendUrl(value) {
