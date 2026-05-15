@@ -2,6 +2,18 @@
 
 Mobile companion for Codex Desktop sessions.
 
+## Why I built this
+
+I built LooPilot for the same reason many people build mobile Codex companions: I wanted to check on my Codex work during lunch, on the way home, or during a short break away from my Windows machine. The name is intentionally a little silly. It can read like "loop pilot", a small co-pilot that keeps a Codex loop moving, and also like "loo pilot", because sometimes the most realistic mobile workflow is checking whether Codex is still alive while you are away from your desk.
+
+Before writing it, I tried projects such as Happy, Hapi, Remodex, and a few similar tools. They were useful, but none of them quite fit my own setup. I use Android and Windows, I switch between Codex Desktop and the CLI, and at the moment I use the desktop app more often. What I wanted was not just a remote CLI panel, but something closer to a mobile version of Codex Desktop: project-grouped conversations, live session state, approvals, model and reasoning controls, and the ability to continue a desktop conversation from my phone.
+
+After testing it for a while, I also became more aware of the limits of this idea. A lot of real development work still depends on seeing the Windows machine directly: checking a running app, inspecting UI changes, watching a local preview, or dealing with tools that are not meaningful through text alone. On the phone, LooPilot is good for reading progress, nudging Codex, answering approvals, sending a small follow-up, or making a quick change request. It is not a full replacement for sitting at the machine.
+
+There is also a synchronization tradeoff. Messages sent from LooPilot go through Codex's local app-server bridge and local session files, so they can be recorded and followed by LooPilot, but Codex Desktop itself does not always reflect those externally-started turns as if they were typed directly into the desktop UI. If the goal is truly to operate Codex from outside with full visual feedback, remote desktop from the phone may still be faster and more honest. Modern phone input methods already make voice dictation into a remote desktop session surprisingly workable, which is also why LooPilot does not try to add its own voice input.
+
+So LooPilot is intentionally scoped as a practical companion, not a perfect mobile clone. It is useful enough for my own "check in and steer Codex" workflow, and maybe it will be useful to someone else with a similar Android + Windows setup. If you run into issues or have a workflow that would make it more useful, feel free to open an issue.
+
 ## Run
 
 ```bash
