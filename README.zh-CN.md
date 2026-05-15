@@ -18,6 +18,26 @@ Codex Desktop 会话的手机端伴侣。
 
 ## 运行
 
+不下载源码，直接运行：
+
+```bash
+npx loopilot
+```
+
+通过临时 Cloudflare Tunnel 获取公网地址：
+
+```bash
+npx loopilot --public
+```
+
+Safe mode 只把手机消息放入队列，不启动 Codex bridge 进程：
+
+```bash
+npx loopilot --safe
+```
+
+从源码运行：
+
 ```bash
 npm install
 npm run dev
@@ -27,7 +47,7 @@ npm run dev
 
 当 Codex 会话需要确认、授权或选择时，PWA 会在对应会话里显示待处理请求；手机浏览器授权通知权限后，也可以使用浏览器通知和震动提醒。
 
-只想测试查看/同步，以及把手机消息放入队列，而不启动 Codex bridge 进程：
+从源码运行 safe mode：
 
 ```bash
 npm run dev:safe
@@ -43,7 +63,7 @@ npm run accept:safe
 
 ## 公网访问
 
-通过临时 Cloudflare Tunnel 获取公网地址：
+从源码运行公网模式：
 
 ```bash
 npm run dev:public

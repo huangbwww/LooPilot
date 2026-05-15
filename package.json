@@ -1,8 +1,32 @@
 {
   "name": "loopilot",
-  "version": "0.1.0",
-  "private": true,
+  "version": "1.0.0",
+  "description": "Mobile companion for Codex Desktop sessions.",
+  "license": "MIT",
+  "author": "huangbwww",
   "type": "module",
+  "bin": {
+    "loopilot": "bin/loopilot.mjs"
+  },
+  "files": [
+    "bin",
+    "server",
+    "build",
+    "public",
+    "README.md",
+    "README.zh-CN.md"
+  ],
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/huangbwww/LooPilot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/huangbwww/LooPilot/issues"
+  },
+  "homepage": "https://github.com/huangbwww/LooPilot#readme",
   "scripts": {
     "dev": "node server/index.mjs",
     "dev:safe": "node server/safe.mjs",
@@ -19,6 +43,7 @@
     "android:sync": "npm run build && npx cap sync android",
     "android:open": "npx cap open android",
     "android:debug": "npm run android:sync && cd android && gradlew.bat assembleDebug -I china-mirrors.init.gradle",
+    "prepack": "npm run build",
     "verify": "npm run lint && npm test && npm run build && npm run doctor && npm audit --omit=dev"
   },
   "dependencies": {

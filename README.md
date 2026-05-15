@@ -18,6 +18,26 @@ So LooPilot is intentionally scoped as a practical companion, not a perfect mobi
 
 ## Run
 
+Run without cloning the repository:
+
+```bash
+npx loopilot
+```
+
+For a public URL through a temporary tunnel:
+
+```bash
+npx loopilot --public
+```
+
+Safe mode queues phone messages without starting Codex bridge processes:
+
+```bash
+npx loopilot --safe
+```
+
+From source:
+
 ```bash
 npm install
 npm run dev
@@ -39,7 +59,7 @@ For a one-command local acceptance check that starts safe mode, pairs with a tes
 npm run accept:safe
 ```
 
-For a public URL through a temporary tunnel:
+From source, for a public URL through a temporary tunnel:
 
 ```bash
 npm run dev:public
