@@ -50,17 +50,19 @@ test("mobile PWA shell advertises an installable standalone app", () => {
   assert.equal(manifest.start_url, "/");
   assert.equal(manifest.display, "standalone");
   assert.equal(manifest.theme_color, "#0f141b");
-  assert.ok(manifest.icons.some((icon) => icon.src === "/icon.svg" && icon.sizes === "any"));
+  assert.ok(manifest.icons.some((icon) => icon.src === "/icon-192.png" && icon.sizes === "192x192"));
+  assert.ok(manifest.icons.some((icon) => icon.src === "/icon-512.png" && icon.sizes === "512x512"));
 });
 
 test("offline shell keeps app assets available without intercepting live API traffic", () => {
   assert.match(serviceWorker, /self\.addEventListener\("install"/);
-  assert.match(serviceWorker, /const CACHE = "loopilot-v4"/);
+  assert.match(serviceWorker, /const CACHE = "loopilot-v5"/);
   assert.match(serviceWorker, /self\.skipWaiting\(\)/);
   assert.match(serviceWorker, /\.then\(\(\) => self\.clients\.claim\(\)\)/);
   assert.match(serviceWorker, /cache\.addAll\(ASSETS\)/);
   assert.match(serviceWorker, /"\/manifest\.webmanifest"/);
-  assert.match(serviceWorker, /"\/icon\.svg"/);
+  assert.match(serviceWorker, /"\/icon-192\.png"/);
+  assert.match(serviceWorker, /"\/icon-512\.png"/);
   assert.match(serviceWorker, /event\.request\.method !== "GET"/);
   assert.match(serviceWorker, /url\.pathname\.startsWith\("\/api"\)/);
   assert.match(serviceWorker, /url\.pathname\.startsWith\("\/live"\)/);
