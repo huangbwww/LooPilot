@@ -73,6 +73,8 @@ npm run dev:public
 
 `dev:public` 会启动应用，并在第一次运行时把私有的 `cloudflared` 二进制下载到 LooPilot 状态目录，然后打印一个 `trycloudflare.com` 公网地址。手机端用启动时打印的配对码登录即可。这个 tunnel 使用 HTTP/2 模式。
 
+目前的公网访问走的是临时 tunnel 模式，`trycloudflare.com` 子域名每次启动都可能变化，所以重启 LooPilot 之后通常需要重新扫码或重新输入地址，再用新的配对码连接。手机端可以自由选择直接网页访问、安装/使用 PWA，或者使用 Android APK。这个方案的坏处是域名会变，网页书签和 PWA 每次都要跟着换地址，所以 LooPilot 额外做了 APK 里的手动输入地址和扫码连接。如果你觉得临时域名还是不方便，也可以自己组虚拟内网或异地组网，然后通过内网 IP 访问本机服务；这部分不绑定 LooPilot，有需要的用户可以按自己的网络工具来配置。
+
 公网模式的一键验收检查：
 
 ```bash

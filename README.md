@@ -69,6 +69,8 @@ npm run dev:public
 
 `dev:public` starts the app and downloads a private `cloudflared` binary into the LooPilot state directory on first run, then prints a public `trycloudflare.com` URL. Use the pairing code printed at startup to sign in from the phone. The tunnel uses HTTP/2 mode.
 
+The current public-access flow is intentionally a temporary tunnel mode. The `trycloudflare.com` subdomain changes every time the tunnel is restarted, so after restarting LooPilot you normally need to scan or enter the new address and pair again. You can choose whichever client fits your phone best: open the web page directly, install/use it as a PWA, or use the Android APK. The tradeoff is that a changing domain makes browser bookmarks and PWA installs less convenient, which is why the APK includes address entry and QR scanning. If you want a stable address without reinstalling or reconnecting every time, you can also run LooPilot through your own virtual private network / mesh network and connect to the machine by its private IP. That setup is outside LooPilot itself, so users who need it can choose their preferred network tool.
+
 To run the public tunnel acceptance check in one command:
 
 ```bash
