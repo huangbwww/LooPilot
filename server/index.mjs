@@ -4,12 +4,18 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import chokidar from "chokidar";
+import QRCode from "qrcode";
 import { WebSocketServer } from "ws";
 import { getAuthToken, getPairingCode, isPairingCodeValid, isWsAuthorized, requireAuth, rotatePairingCode } from "./auth.mjs";
 import { dispatchRemoteMessage, resolveBridgeRequest } from "./codexBridge.mjs";
 import { shutdownAppServer } from "./codexAppServer.mjs";
 import { getStateDir } from "./state.mjs";
-import { normalizeApprovalPolicy, normalizeApprovalScope } from "./options.mjs";
+import {
+  defaultSandboxModeForApproval,
+  normalizeApprovalPolicy,
+  normalizeApprovalScope,
+  normalizeSandboxMode
+} from "./options.mjs";
 import { startPublicTunnel } from "./tunnel.mjs";
 import {
   enqueueRemoteMessage,
@@ -17,7 +23,7 @@ import {
   getCodexHome,
   getSessionDetail,
   getWatchedPaths,
-  listSessions,
+  listSessionPage,
   resolveAction
 } from "./codexStore.mjs";
 
@@ -32,6 +38,12 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
 let tunnelHandle = null;
+const keepAliveTimer = setInterval(() => {
+  for (const client of wss.clients) {
+    if (client.readyState === client.OPEN) client.ping();
+  }
+}, 25000);
+keepAliveTimer.unref?.();
 const pairAttempts = new Map();
 const PAIR_ATTEMPT_LIMIT = 8;
 const PAIR_ATTEMPT_WINDOW_MS = 5 * 60 * 1000;
@@ -39,6 +51,19 @@ const PAIR_ATTEMPT_WINDOW_MS = 5 * 60 * 1000;
 ensureStateDirs();
 
 app.use(express.json({ limit: "1mb" }));
+app.use(corsForShellClients);
+
+function corsForShellClients(req, res, next) {
+  const origin = req.headers.origin;
+  if (isAllowedShellOrigin(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Vary", "Origin");
+  }
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  return next();
+}
 
 app.get("/api/health", (_req, res) => {
   res.json({
@@ -70,12 +95,15 @@ app.get("/api/system", (_req, res) => {
   });
 });
 
-app.get("/api/sessions", (_req, res) => {
-  res.json({ sessions: listSessions() });
+app.get("/api/sessions", (req, res) => {
+  res.json(listSessionPage({
+    limit: req.query?.limit,
+    offset: req.query?.offset
+  }));
 });
 
 app.get("/api/sessions/:id", (req, res) => {
-  const detail = getSessionDetail(req.params.id);
+  const detail = getSessionDetail(req.params.id, { limit: req.query?.limit });
   if (!detail) return res.status(404).json({ error: "Session not found" });
   res.json({ session: detail });
 });
@@ -101,10 +129,12 @@ app.post("/api/sessions/:id/messages", (req, res) => {
   if (!message) return res.status(400).json({ error: "Message is required" });
   if (!getSessionDetail(req.params.id)) return res.status(404).json({ error: "Session not found" });
   const approvalPolicy = normalizeApprovalPolicy(req.body?.approvalPolicy);
+  const sandboxMode = normalizeSandboxMode(req.body?.sandboxMode) || defaultSandboxModeForApproval(approvalPolicy);
   const record = enqueueRemoteMessage(req.params.id, message, {
     model: req.body?.model,
     reasoning: req.body?.reasoning,
-    approvalPolicy
+    approvalPolicy,
+    sandboxMode
   });
   broadcast({ type: "outbox", record });
   const dispatch = dispatchRemoteMessage({
@@ -113,6 +143,7 @@ app.post("/api/sessions/:id/messages", (req, res) => {
     model: req.body?.model,
     reasoning: req.body?.reasoning,
     approvalPolicy,
+    sandboxMode,
     recordId: record.id,
     onUpdate: (job) => broadcast({ type: "bridge", job })
   });
@@ -150,7 +181,7 @@ if (args.has("--prod")) {
 }
 
 wss.on("connection", (socket) => {
-  socket.send(JSON.stringify({ type: "snapshot", sessions: listSessions() }));
+  socket.send(JSON.stringify({ type: "snapshot", ...listSessionPage({ limit: 16 }) }));
 });
 
 server.on("upgrade", (request, socket, head) => {
@@ -174,7 +205,7 @@ let broadcastTimer = null;
 watcher.on("all", () => {
   clearTimeout(broadcastTimer);
   broadcastTimer = setTimeout(() => {
-    broadcast({ type: "snapshot", sessions: listSessions() });
+    broadcast({ type: "snapshot", ...listSessionPage({ limit: 16 }) });
   }, 120);
 });
 
@@ -184,6 +215,7 @@ server.listen(port, async () => {
   console.log(`LooPilot running at ${localUrl}`);
   console.log(`Authorized URL: ${localUrlWithToken}`);
   console.log(`Pairing code: ${pairingCode}`);
+  await printPairingQr(localUrl, pairingCode);
   console.log(`Reading Codex sessions from ${getCodexHome()}`);
   if (args.has("--public")) {
     await startTunnel(port);
@@ -199,13 +231,43 @@ function broadcast(payload) {
 
 async function startTunnel(targetPort) {
   try {
-    tunnelHandle = await startPublicTunnel(targetPort);
+    tunnelHandle = await startPublicTunnel(targetPort, {
+      onUrl: (publicUrl) => printPairingQr(publicUrl, pairingCode)
+    });
   } catch (error) {
     console.error(`Unable to start public tunnel: ${error.message}`);
   }
 }
 
+async function printPairingQr(serverUrl, code) {
+  try {
+    const payload = JSON.stringify({ type: "loopilot-pairing", version: 1, server: serverUrl, code });
+    const qr = await QRCode.toString(payload, { type: "terminal", small: true, margin: 1 });
+    console.log(`Pairing QR (${serverUrl}):`);
+    console.log(qr);
+  } catch (error) {
+    console.error(`Unable to generate pairing QR: ${error.message}`);
+  }
+}
+
+function isAllowedShellOrigin(origin) {
+  if (!origin) return false;
+  const explicit = String(process.env.LOOPILOT_ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (explicit.includes(origin)) return true;
+  try {
+    const url = new URL(origin);
+    if (["capacitor:", "ionic:"].includes(url.protocol)) return true;
+    return ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 function shutdown() {
+  clearInterval(keepAliveTimer);
   tunnelHandle?.kill?.();
   shutdownAppServer();
   for (const client of wss.clients) client.terminate();

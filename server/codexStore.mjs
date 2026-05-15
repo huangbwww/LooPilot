@@ -11,7 +11,10 @@ const OUTBOX_DIR = path.join(APP_STATE_DIR, "outbox");
 const JOBS_DIR = path.join(APP_STATE_DIR, "jobs");
 
 const MAX_PREVIEW_CHARS = 320;
-const MAX_DETAIL_ITEMS = 900;
+const DEFAULT_DETAIL_ITEMS = 120;
+const MAX_DETAIL_ITEMS = 300;
+const MAX_SESSION_LIMIT = 120;
+const parseCache = new Map();
 
 export function getCodexHome() {
   return CODEX_HOME;
@@ -26,18 +29,62 @@ export function ensureStateDirs() {
   fs.mkdirSync(JOBS_DIR, { recursive: true });
 }
 
-export function listSessions() {
+export function listSessions(options = {}) {
+  const limit = normalizeLimit(options.limit);
+  const offset = normalizeOffset(options.offset);
+  const summaries = sortedSessionSummaries();
+  const page = limit ? summaries.slice(offset, offset + limit) : summaries.slice(offset);
+  const sessions = page.map((summary) => hydrateSessionSummary(summary));
+  sessions.total = summaries.length;
+  sessions.hasMore = limit ? offset + sessions.length < summaries.length : false;
+  sessions.nextOffset = offset + sessions.length;
+  return sessions;
+}
+
+export function listSessionPage(options = {}) {
+  const sessions = listSessions(options);
+  return {
+    sessions,
+    total: sessions.total || sessions.length,
+    hasMore: Boolean(sessions.hasMore),
+    nextOffset: sessions.nextOffset || sessions.length
+  };
+}
+
+export function getSessionDetail(id, options = {}) {
+  const summary = sortedSessionSummaries().find((item) => item.id === id);
+  if (!summary?.path) return summary ? hydrateSessionSummary(summary) : null;
+  const parsed = parseSessionFile(summary.path, {
+    detail: true,
+    maxDetailItems: normalizeDetailLimit(options.limit)
+  });
+  const outbox = readOutbox(id);
+  const pendingAction = visiblePendingAction(parsed.pendingAction, outbox) || pendingActionFromJobs(outbox);
+  return {
+    ...summary,
+    ...parsed,
+    title: readableTitle(summary.title, parsed),
+    isSubagent: parsed.threadSource === "subagent",
+    status: parsed.status === "waiting" && !pendingAction ? "idle" : parsed.status,
+    pendingAction,
+    outbox
+  };
+}
+
+function sortedSessionSummaries() {
   const index = readSessionIndex();
   const files = indexSessionFiles();
   const summaries = new Map();
 
   for (const row of index) {
     if (!row?.id) continue;
+    const filePath = files.get(row.id) || null;
+    const fileUpdatedAt = filePath ? safeStat(filePath)?.mtime?.toISOString() : null;
     summaries.set(row.id, {
       id: row.id,
       title: row.thread_name || "Untitled session",
-      updatedAt: row.updated_at,
-      path: files.get(row.id) || null
+      updatedAt: latestIsoDate(row.updated_at, fileUpdatedAt),
+      path: filePath
     });
   }
 
@@ -53,40 +100,36 @@ export function listSessions() {
   }
 
   return [...summaries.values()]
-    .map((summary) => {
-      const parsed = summary.path ? parseSessionFile(summary.path, { detail: false }) : null;
-      const outbox = readOutbox(summary.id);
-      const pendingAction = visiblePendingAction(parsed?.pendingAction, outbox) || pendingActionFromJobs(outbox);
-      return {
-        ...summary,
-        title: readableTitle(summary.title, parsed),
-        cwd: parsed?.cwd,
-        model: parsed?.model,
-        reasoning: parsed?.reasoning,
-        status: parsed?.status === "waiting" && !pendingAction ? "idle" : parsed?.status || "idle",
-        progress: parsed?.progress || [],
-        pendingAction,
-        lastOutput: parsed?.lastOutput || "",
-        messageCount: parsed?.messageCount || 0,
-        toolCount: parsed?.toolCount || 0,
-        updatedAt: parsed?.updatedAt || summary.updatedAt
-      };
-    })
     .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
 }
 
-export function getSessionDetail(id) {
-  const session = listSessions().find((item) => item.id === id);
-  if (!session?.path) return session || null;
-  const parsed = parseSessionFile(session.path, { detail: true });
-  const outbox = readOutbox(id);
-  const pendingAction = visiblePendingAction(parsed.pendingAction, outbox) || pendingActionFromJobs(outbox);
+function latestIsoDate(...values) {
+  return values
+    .filter(Boolean)
+    .sort((a, b) => new Date(b) - new Date(a))[0];
+}
+
+function hydrateSessionSummary(summary) {
+  const parsed = summary.path ? parseSessionFile(summary.path, { detail: false }) : null;
+  const outbox = readOutbox(summary.id);
+  const pendingAction = visiblePendingAction(parsed?.pendingAction, outbox) || pendingActionFromJobs(outbox);
   return {
-    ...session,
-    ...parsed,
-    status: parsed.status === "waiting" && !pendingAction ? "idle" : parsed.status,
+    ...summary,
+    title: readableTitle(summary.title, parsed),
+    cwd: parsed?.cwd,
+    model: parsed?.model,
+    reasoning: parsed?.reasoning,
+    threadSource: parsed?.threadSource || "user",
+    parentThreadId: parsed?.parentThreadId || "",
+    agentNickname: parsed?.agentNickname || "",
+    isSubagent: parsed?.threadSource === "subagent",
+    status: parsed?.status === "waiting" && !pendingAction ? "idle" : parsed?.status || "idle",
+    progress: parsed?.progress || [],
     pendingAction,
-    outbox
+    lastOutput: parsed?.lastOutput || "",
+    messageCount: parsed?.messageCount || 0,
+    toolCount: parsed?.toolCount || 0,
+    updatedAt: parsed?.updatedAt || summary.updatedAt
   };
 }
 
@@ -144,7 +187,12 @@ function indexSessionFiles() {
   return files;
 }
 
-function parseSessionFile(filePath, { detail }) {
+function parseSessionFile(filePath, { detail, maxDetailItems = DEFAULT_DETAIL_ITEMS }) {
+  const stat = safeStat(filePath);
+  const cacheKey = `${filePath}|${stat?.mtimeMs || 0}|${detail ? maxDetailItems : 0}`;
+  const cached = parseCache.get(cacheKey);
+  if (cached) return cached;
+
   const rows = readJsonl(filePath);
   const timeline = [];
   const progress = [];
@@ -153,12 +201,15 @@ function parseSessionFile(filePath, { detail }) {
   let cwd = "";
   let model = "";
   let reasoning = "";
+  let threadSource = "user";
+  let parentThreadId = "";
+  let agentNickname = "";
   let status = "idle";
   let pendingAction = null;
   let lastOutput = "";
   let messageCount = 0;
   let toolCount = 0;
-  let updatedAt = safeStat(filePath)?.mtime?.toISOString();
+  let updatedAt = stat?.mtime?.toISOString();
 
   for (const row of rows) {
     updatedAt = row.timestamp || updatedAt;
@@ -166,6 +217,13 @@ function parseSessionFile(filePath, { detail }) {
       id = row.payload?.id || id;
       cwd = row.payload?.cwd || cwd;
       model = row.payload?.model || model;
+      threadSource = row.payload?.thread_source || threadSource;
+      parentThreadId = row.payload?.source?.subagent?.thread_spawn?.parent_thread_id
+        || row.payload?.forked_from_id
+        || parentThreadId;
+      agentNickname = row.payload?.agent_nickname
+        || row.payload?.source?.subagent?.thread_spawn?.agent_nickname
+        || agentNickname;
       continue;
     }
 
@@ -252,11 +310,14 @@ function parseSessionFile(filePath, { detail }) {
     }
   }
 
-  return {
+  const parsed = {
     id,
     cwd,
     model,
     reasoning,
+    threadSource,
+    parentThreadId,
+    agentNickname,
     status,
     progress: progress.slice(-5),
     pendingAction,
@@ -265,8 +326,12 @@ function parseSessionFile(filePath, { detail }) {
     toolCount,
     updatedAt,
     stats,
-    timeline: detail ? timeline.slice(-MAX_DETAIL_ITEMS) : undefined
+    timeline: detail ? timeline.slice(-maxDetailItems) : undefined,
+    timelineTotal: detail ? timeline.length : undefined,
+    timelineHasMore: detail ? timeline.length > maxDetailItems : undefined
   };
+  rememberParse(cacheKey, parsed);
+  return parsed;
 }
 
 function readOutbox(sessionId) {
@@ -275,7 +340,15 @@ function readOutbox(sessionId) {
     path.join(OUTBOX_DIR, `${sessionId}.actions.jsonl`),
     path.join(JOBS_DIR, `${sessionId}.jsonl`)
   ];
-  return files.flatMap((file) => (fs.existsSync(file) ? readJsonl(file) : []));
+  return files
+    .flatMap((file) => (fs.existsSync(file) ? readJsonl(file) : []))
+    .sort((a, b) => recordTime(a) - recordTime(b));
+}
+
+function recordTime(record) {
+  const value = record?.createdAt || record?.at || record?.startedAt || record?.finishedAt;
+  const time = value ? new Date(value).getTime() : 0;
+  return Number.isFinite(time) ? time : 0;
 }
 
 function pendingActionFromJobs(records) {
@@ -470,6 +543,31 @@ function safeStat(filePath) {
   } catch {
     return null;
   }
+}
+
+function normalizeLimit(value) {
+  if (value === undefined || value === null || value === "") return 0;
+  const limit = Number(value);
+  if (!Number.isFinite(limit) || limit <= 0) return 0;
+  return Math.min(Math.floor(limit), MAX_SESSION_LIMIT);
+}
+
+function normalizeDetailLimit(value) {
+  if (value === undefined || value === null || value === "") return DEFAULT_DETAIL_ITEMS;
+  const limit = Number(value);
+  if (!Number.isFinite(limit) || limit <= 0) return DEFAULT_DETAIL_ITEMS;
+  return Math.min(Math.floor(limit), MAX_DETAIL_ITEMS);
+}
+
+function normalizeOffset(value) {
+  const offset = Number(value);
+  if (!Number.isFinite(offset) || offset <= 0) return 0;
+  return Math.floor(offset);
+}
+
+function rememberParse(key, parsed) {
+  if (parseCache.size > 500) parseCache.clear();
+  parseCache.set(key, parsed);
 }
 
 function cryptoId() {

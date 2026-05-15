@@ -13,6 +13,8 @@ test("development middleware loads React transform for JSX", () => {
   const source = fs.readFileSync(path.join(projectRoot, "server", "index.mjs"), "utf8");
   assert.match(source, /await import\("@vitejs\/plugin-react"\)/);
   assert.match(source, /plugins:\s*\[react\(\)\]/);
+  assert.match(source, /import QRCode from "qrcode"/);
+  assert.match(source, /type: "loopilot-pairing"/);
 });
 
 test("local server exposes token-protected sessions, websocket sync, and queue send", async () => {
@@ -45,8 +47,9 @@ test("local server exposes token-protected sessions, websocket sync, and queue s
   });
 
   try {
-    await waitFor(() => stdout.includes("Authorized URL:"), 10000, () => stderr || stdout);
+    await waitFor(() => stdout.includes("Pairing QR"), 10000, () => stderr || stdout);
     assert.match(stdout, new RegExp(`token=${token}`));
+    assert.match(stdout, new RegExp(`Pairing QR \\(http://localhost:${port}\\):`));
 
     const health = await requestJson(port, "/api/health");
     assert.equal(health.status, 200);
@@ -106,10 +109,14 @@ test("local server exposes token-protected sessions, websocket sync, and queue s
     const sessions = await requestJson(port, "/api/sessions", token);
     assert.equal(sessions.status, 200);
     assert.equal(sessions.body.sessions[0].id, fixture.sessionId);
+    assert.equal(sessions.body.total, 1);
+    assert.equal(sessions.body.hasMore, false);
+    assert.equal(sessions.body.nextOffset, 1);
 
     const snapshot = await websocketSnapshot(port, token);
     assert.equal(snapshot.type, "snapshot");
     assert.equal(snapshot.sessions[0].id, fixture.sessionId);
+    assert.equal(snapshot.hasMore, false);
 
     const send = await requestJson(port, `/api/sessions/${fixture.sessionId}/messages`, token, {
       method: "POST",
@@ -117,13 +124,15 @@ test("local server exposes token-protected sessions, websocket sync, and queue s
         message: "queued from integration",
         model: "gpt-5.5",
         reasoning: "high",
-        approvalPolicy: "on-request"
+        approvalPolicy: "on-request",
+        sandboxMode: "workspace-write"
       })
     });
     assert.equal(send.status, 202);
     assert.equal(send.body.dispatch.ok, true);
     assert.equal(send.body.dispatch.job.status, "queued_only");
     assert.equal(send.body.record.options.approvalPolicy, "on-request");
+    assert.equal(send.body.record.options.sandboxMode, "workspace-write");
 
     const action = await requestJson(port, `/api/sessions/${fixture.sessionId}/actions/ask-1`, token, {
       method: "POST",
@@ -289,6 +298,7 @@ test("public mode starts tunnel path without exposing tokens", async () => {
     const publicLine = stdout.split(/\r?\n/).find((line) => line.includes("Public URL:"));
     assert.equal(publicLine, `Public URL: ${publicUrl}`);
     assert.doesNotMatch(publicLine, /token=/);
+    assert.match(stdout, new RegExp(`Pairing QR \\(${publicUrl}\\):`));
 
     const health = await requestJson(port, "/api/health");
     assert.equal(health.status, 200);

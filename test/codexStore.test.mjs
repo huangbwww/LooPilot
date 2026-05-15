@@ -8,9 +8,13 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), "loopilot-store-"));
 const codexHome = path.join(root, ".codex");
 const sessionId = "019e1c98-c592-7dc2-a684-ffec77c153b8";
 const bridgeSessionId = "019e1c98-c592-7dc2-a684-ffec77c153b9";
+const subagentSessionId = "019e1c98-c592-7dc2-a684-ffec77c153ba";
+const outboxOrderSessionId = "019e1c98-c592-7dc2-a684-ffec77c153bb";
 const rolloutDir = path.join(codexHome, "sessions", "2026", "05", "13");
 const rolloutPath = path.join(rolloutDir, `rollout-2026-05-13T09-00-00-${sessionId}.jsonl`);
 const bridgeRolloutPath = path.join(rolloutDir, `rollout-2026-05-13T09-01-00-${bridgeSessionId}.jsonl`);
+const subagentRolloutPath = path.join(rolloutDir, `rollout-2026-05-13T09-02-00-${subagentSessionId}.jsonl`);
+const outboxOrderRolloutPath = path.join(rolloutDir, `rollout-2026-05-13T09-03-00-${outboxOrderSessionId}.jsonl`);
 
 process.env.CODEX_HOME = codexHome;
 process.chdir(root);
@@ -20,7 +24,9 @@ fs.writeFileSync(
   path.join(codexHome, "session_index.jsonl"),
   [
     JSON.stringify({ id: sessionId, thread_name: "Test Session", updated_at: "2026-05-13T01:00:00.000Z" }),
-    JSON.stringify({ id: bridgeSessionId, thread_name: "Bridge Pending", updated_at: "2026-05-13T01:00:00.000Z" })
+    JSON.stringify({ id: bridgeSessionId, thread_name: "Bridge Pending", updated_at: "2026-05-13T01:00:00.000Z" }),
+    JSON.stringify({ id: subagentSessionId, thread_name: "Review branch", updated_at: "2026-05-13T01:00:00.000Z" }),
+    JSON.stringify({ id: outboxOrderSessionId, thread_name: "Outbox Order", updated_at: "2026-05-13T01:00:00.000Z" })
   ].join("\n")
 );
 
@@ -101,19 +107,101 @@ fs.writeFileSync(
     payload: { id: bridgeSessionId, cwd: "D:\\LooPilot", model: "gpt-5.5" }
   })}\n`
 );
+fs.writeFileSync(
+  subagentRolloutPath,
+  `${JSON.stringify({
+    timestamp: "2026-05-13T01:00:00.000Z",
+    type: "session_meta",
+    payload: {
+      id: subagentSessionId,
+      cwd: "D:\\LooPilot",
+      model: "gpt-5.5",
+      thread_source: "subagent",
+      agent_nickname: "Ada",
+      source: {
+        subagent: {
+          thread_spawn: {
+            parent_thread_id: sessionId,
+            depth: 1,
+            agent_nickname: "Ada"
+          }
+        }
+      }
+    }
+  })}\n`
+);
+fs.writeFileSync(
+  outboxOrderRolloutPath,
+  `${JSON.stringify({
+    timestamp: "2026-05-13T01:00:00.000Z",
+    type: "session_meta",
+    payload: { id: outboxOrderSessionId, cwd: "D:\\LooPilot", model: "gpt-5.5" }
+  })}\n`
+);
+fs.utimesSync(rolloutPath, new Date("2026-05-13T02:00:00.000Z"), new Date("2026-05-13T02:00:00.000Z"));
+fs.utimesSync(bridgeRolloutPath, new Date("2026-05-13T01:01:00.000Z"), new Date("2026-05-13T01:01:00.000Z"));
+fs.utimesSync(subagentRolloutPath, new Date("2026-05-13T01:02:00.000Z"), new Date("2026-05-13T01:02:00.000Z"));
+fs.utimesSync(outboxOrderRolloutPath, new Date("2026-05-13T01:03:00.000Z"), new Date("2026-05-13T01:03:00.000Z"));
 
 const store = await import(`../server/codexStore.mjs?case=${Date.now()}`);
 
 test("lists Codex sessions from session_index and rollout files", () => {
   const sessions = store.listSessions();
   const session = sessions.find((item) => item.id === sessionId);
-  assert.equal(sessions.length, 2);
+  assert.equal(sessions.length, 4);
+  assert.equal(sessions.total, 4);
+  assert.equal(sessions.hasMore, false);
   assert.equal(session.title, "Test Session");
   assert.equal(session.status, "waiting");
   assert.equal(session.model, "gpt-5.5");
   assert.equal(session.reasoning, "high");
   assert.equal(session.messageCount, 2);
   assert.equal(session.toolCount, 2);
+});
+
+test("prefers rollout file mtime when session_index timestamps are stale", () => {
+  const sessions = store.listSessions();
+  assert.equal(sessions[0].id, sessionId);
+});
+
+test("paginates session summaries before hydrating details", () => {
+  const firstPage = store.listSessionPage({ limit: 2 });
+  assert.equal(firstPage.sessions.length, 2);
+  assert.equal(firstPage.total, 4);
+  assert.equal(firstPage.hasMore, true);
+  assert.equal(firstPage.nextOffset, 2);
+
+  const secondPage = store.listSessionPage({ limit: 2, offset: 2 });
+  assert.equal(secondPage.sessions.length, 2);
+  assert.equal(secondPage.hasMore, false);
+  assert.equal(secondPage.nextOffset, 4);
+  assert.notEqual(firstPage.sessions[0].id, secondPage.sessions[0].id);
+});
+
+test("outbox records are ordered by timestamp across message action and job files", () => {
+  const message = store.enqueueRemoteMessage(outboxOrderSessionId, "latest phone message");
+  store.appendBridgeJob(outboxOrderSessionId, {
+    id: "old-bridge",
+    sessionId: outboxOrderSessionId,
+    status: "output",
+    at: "2020-01-01T00:00:00.000Z"
+  });
+  const action = store.resolveAction(outboxOrderSessionId, "approval-2", {
+    decision: "approved",
+    scope: "turn"
+  });
+  const detail = store.getSessionDetail(outboxOrderSessionId);
+  assert.equal(detail.outbox[0].id, "old-bridge");
+  assert.equal(detail.outbox.at(-2).id, message.id);
+  assert.equal(detail.outbox.at(-1).id, action.id);
+});
+
+test("subagent sessions are exposed with parent metadata", () => {
+  const subagent = store.listSessions().find((item) => item.id === subagentSessionId);
+  assert.equal(subagent.isSubagent, true);
+  assert.equal(subagent.threadSource, "subagent");
+  assert.equal(subagent.parentThreadId, sessionId);
+  assert.equal(subagent.agentNickname, "Ada");
 });
 
 test("session detail includes timeline and pending user-input action", () => {
@@ -123,6 +211,13 @@ test("session detail includes timeline and pending user-input action", () => {
   assert.equal(detail.pendingAction.id, "ask-1");
   assert.equal(detail.pendingAction.kind, "input");
   assert.equal(detail.pendingAction.questions[0].id, "choice");
+});
+
+test("session detail can be limited for mobile rendering", () => {
+  const detail = store.getSessionDetail(sessionId, { limit: 2 });
+  assert.equal(detail.timeline.length, 2);
+  assert.equal(detail.timelineTotal, 4);
+  assert.equal(detail.timelineHasMore, true);
 });
 
 test("session detail summarizes tool calls instead of exposing raw JSON arguments", () => {
@@ -138,7 +233,8 @@ test("remote messages and action decisions are persisted to local state", () => 
   const message = store.enqueueRemoteMessage(sessionId, "from phone", {
     model: "gpt-5.5",
     reasoning: "high",
-    approvalPolicy: "on-request"
+    approvalPolicy: "on-request",
+    sandboxMode: "workspace-write"
   });
   const action = store.resolveAction(sessionId, "ask-1", {
     decision: "approved",
@@ -149,6 +245,7 @@ test("remote messages and action decisions are persisted to local state", () => 
   assert.equal(detail.outbox.some((item) => item.id === message.id && item.message === "from phone"), true);
   assert.equal(detail.outbox.some((item) => item.id === action.id && item.actionId === "ask-1"), true);
   assert.equal(message.options.approvalPolicy, "on-request");
+  assert.equal(message.options.sandboxMode, "workspace-write");
   assert.equal(action.decision, "approved");
   assert.deepEqual(action.answers, { choice: ["A"] });
   assert.equal(action.scope, "session");

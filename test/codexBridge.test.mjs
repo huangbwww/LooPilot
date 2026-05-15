@@ -38,6 +38,7 @@ test("queue bridge mode records remote send without spawning app-server or CLI",
     model: "gpt-5.5",
     reasoning: "high",
     approvalPolicy: "on-request",
+    sandboxMode: "workspace-write",
     recordId: "record-1",
     onUpdate: (update) => updates.push(update)
   });

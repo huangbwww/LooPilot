@@ -12,10 +12,11 @@ const BIN_DIR = process.env.LOOPILOT_CLOUDFLARED_DIR || path.join(getStateDir(),
 const CLOUDFLARED_VERSION = "latest";
 const DOWNLOAD_TIMEOUT_MS = 90000;
 
-export async function startPublicTunnel(port) {
+export async function startPublicTunnel(port, options = {}) {
   const localUrl = `http://localhost:${port}`;
   if (process.env.LOOPILOT_FAKE_TUNNEL_URL) {
     console.log(`Public URL: ${process.env.LOOPILOT_FAKE_TUNNEL_URL}`);
+    options.onUrl?.(process.env.LOOPILOT_FAKE_TUNNEL_URL);
     const fake = new EventEmitter();
     fake.kill = () => fake.emit("close", 0);
     return fake;
@@ -26,8 +27,8 @@ export async function startPublicTunnel(port) {
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true
   });
-  pipeTunnelOutput(child, /https:\/\/(?!api\.)[a-z0-9-]+\.trycloudflare\.com/i);
-  pollMetricsForTunnelUrl(child, metricsAddress);
+  pipeTunnelOutput(child, /https:\/\/(?!api\.)[a-z0-9-]+\.trycloudflare\.com/i, options.onUrl);
+  pollMetricsForTunnelUrl(child, metricsAddress, options.onUrl);
   return child;
 }
 
@@ -270,22 +271,23 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function pipeTunnelOutput(child, urlPattern) {
-  child.stdout.on("data", (chunk) => printTunnelChunk(chunk, urlPattern));
-  child.stderr.on("data", (chunk) => printTunnelChunk(chunk, urlPattern));
+function pipeTunnelOutput(child, urlPattern, onUrl) {
+  child.stdout.on("data", (chunk) => printTunnelChunk(chunk, urlPattern, onUrl));
+  child.stderr.on("data", (chunk) => printTunnelChunk(chunk, urlPattern, onUrl));
   child.on("close", (code) => console.log(`Public tunnel exited with code ${code}`));
 }
 
-function printTunnelChunk(chunk, urlPattern) {
+function printTunnelChunk(chunk, urlPattern, onUrl) {
   const text = chunk.toString();
   const match = text.match(urlPattern);
   if (match) {
     console.log(`Public URL: ${match[0]}`);
+    onUrl?.(match[0]);
   }
   else process.stdout.write(text);
 }
 
-function pollMetricsForTunnelUrl(child, metricsAddress) {
+function pollMetricsForTunnelUrl(child, metricsAddress, onUrl) {
   const started = Date.now();
   const timer = setInterval(async () => {
     if (child.exitCode !== null || Date.now() - started > 120000) {
@@ -296,6 +298,7 @@ function pollMetricsForTunnelUrl(child, metricsAddress) {
       const url = await readTunnelUrlFromMetrics(metricsAddress);
       if (!url) return;
       console.log(`Public URL: ${url}`);
+      onUrl?.(url);
       clearInterval(timer);
     } catch {
       // cloudflared may not have started the metrics endpoint yet.
