@@ -6,7 +6,7 @@ Languages: English | [简体中文](README.zh-CN.md)
 
 ## Why I built this
 
-I built LooPilot for the same reason many people build mobile Codex companions: I wanted to check on my Codex work during lunch, on the way home, or during a short break away from my Windows machine. The name is intentionally a little silly. It can read like "loop pilot", a small co-pilot that keeps a Codex loop moving, and also like "loo pilot", because sometimes the most realistic mobile workflow is checking whether Codex is still alive while you are away from your desk.
+I built LooPilot for the same reason many people build mobile Codex companions: I wanted to check on my Codex work during lunch, on the way home, or during a short break away from my Windows machine. The name is intentionally a little silly. It can read like "loop pilot", a small co-pilot that keeps a Codex loop moving, and also like "loo pilot", because sometimes the most realistic mobile workflow is checking whether Codex is still alive while you are away from your desk, including those very serious restroom status checks 😄.
 
 Before writing it, I tried projects such as Happy, Hapi, Remodex, and a few similar tools. They were useful, but none of them quite fit my own setup. I use Android and Windows, I switch between Codex Desktop and the CLI, and at the moment I use the desktop app more often. What I wanted was not just a remote CLI panel, but something closer to a mobile version of Codex Desktop: project-grouped conversations, live session state, approvals, model and reasoning controls, and the ability to continue a desktop conversation from my phone.
 
