@@ -11,6 +11,10 @@ import {
   Circle,
   Clock3,
   Folder,
+  FolderOpen,
+  ListCollapse,
+  ListTree,
+  LocateFixed,
   MessageSquare,
   PanelLeft,
   Send,
@@ -485,49 +489,110 @@ function SidebarHeader({ connection, waitingCount, onClose }) {
 
 function SessionList({ sessions, selectedId, hasMore, loadingMore, onLoadMore, onSelect }) {
   const [expandedSubagents, setExpandedSubagents] = useState({});
+  const [collapsedProjects, setCollapsedProjects] = useState({});
+  const selectedRowRef = useRef(null);
+  const pendingLocateRef = useRef(false);
   const groups = groupSessionsByProject(sessions);
+
+  useEffect(() => {
+    if (!pendingLocateRef.current || !selectedRowRef.current) return;
+    pendingLocateRef.current = false;
+    selectedRowRef.current.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [collapsedProjects, expandedSubagents, selectedId]);
+
   function handleScroll(event) {
     const element = event.currentTarget;
     if (element.scrollHeight - element.scrollTop - element.clientHeight < 180) onLoadMore();
   }
+
+  function expandAllProjects() {
+    const subagentGroups = {};
+    for (const group of groups) {
+      if (group.sessions.some((session) => session.isSubagent)) subagentGroups[group.key] = true;
+    }
+    setCollapsedProjects({});
+    setExpandedSubagents(subagentGroups);
+  }
+
+  function collapseAllProjects() {
+    const next = {};
+    for (const group of groups) next[group.key] = true;
+    setCollapsedProjects(next);
+  }
+
+  function locateSelectedSession() {
+    const group = groups.find((item) => item.sessions.some((session) => session.id === selectedId));
+    if (!group) return;
+    const selectedSession = group.sessions.find((session) => session.id === selectedId);
+    pendingLocateRef.current = true;
+    setCollapsedProjects((current) => ({ ...current, [group.key]: false }));
+    if (selectedSession?.isSubagent) {
+      setExpandedSubagents((current) => ({ ...current, [group.key]: true }));
+    }
+    requestAnimationFrame(() => selectedRowRef.current?.scrollIntoView({ block: "center", behavior: "smooth" }));
+  }
+
   return (
     <div className="session-list" onScroll={handleScroll}>
+      <div className="session-list-toolbar" aria-label="项目列表操作">
+        <button type="button" title="全部展开" aria-label="全部展开项目" onClick={expandAllProjects}>
+          <ListTree size={15} />
+        </button>
+        <button type="button" title="全部收起" aria-label="全部收起项目" onClick={collapseAllProjects}>
+          <ListCollapse size={15} />
+        </button>
+        <button type="button" title="定位当前对话" aria-label="定位当前对话" disabled={!selectedId} onClick={locateSelectedSession}>
+          <LocateFixed size={15} />
+        </button>
+      </div>
       {groups.map((group) => {
         const primarySessions = group.sessions.filter((session) => !session.isSubagent);
         const subagents = group.sessions.filter((session) => session.isSubagent);
         const selectedSubagent = subagents.some((session) => session.id === selectedId);
         const subagentsOpen = Boolean(expandedSubagents[group.key] || selectedSubagent);
+        const projectOpen = !collapsedProjects[group.key];
         return (
-          <section className="project-group" key={group.key}>
-            <div className="project-header">
-              <Folder size={15} />
+          <section className={`project-group ${projectOpen ? "open" : "collapsed"}`} key={group.key}>
+            <button
+              type="button"
+              className="project-header"
+              aria-expanded={projectOpen}
+              onClick={() => setCollapsedProjects((current) => ({ ...current, [group.key]: projectOpen }))}
+            >
+              <ChevronDown size={14} />
+              {projectOpen ? <FolderOpen size={15} /> : <Folder size={15} />}
               <span>{group.name}</span>
-            </div>
-            {primarySessions.map((session) => (
-              <SessionRow key={session.id} session={session} selectedId={selectedId} onSelect={onSelect} />
-            ))}
-            {subagents.length > 0 && (
-              <div className="subagent-section">
-                <button
-                  type="button"
-                  className={`subagent-toggle ${subagentsOpen ? "open" : ""}`}
-                  onClick={() => setExpandedSubagents((current) => ({
-                    ...current,
-                    [group.key]: !subagentsOpen
-                  }))}
-                >
-                  <ChevronDown size={14} />
-                  <span>子会话</span>
-                  <small>{subagents.length}</small>
-                </button>
-                {subagentsOpen && (
-                  <div className="subagent-list">
-                    {subagents.map((session) => (
-                      <SessionRow key={session.id} session={session} selectedId={selectedId} onSelect={onSelect} subagent />
-                    ))}
+              <small>{group.sessions.length}</small>
+            </button>
+            {projectOpen && (
+              <>
+                {primarySessions.map((session) => (
+                  <SessionRow key={session.id} session={session} selectedId={selectedId} onSelect={onSelect} rowRef={session.id === selectedId ? selectedRowRef : null} />
+                ))}
+                {subagents.length > 0 && (
+                  <div className="subagent-section">
+                    <button
+                      type="button"
+                      className={`subagent-toggle ${subagentsOpen ? "open" : ""}`}
+                      onClick={() => setExpandedSubagents((current) => ({
+                        ...current,
+                        [group.key]: !subagentsOpen
+                      }))}
+                    >
+                      <ChevronDown size={14} />
+                      <span>子会话</span>
+                      <small>{subagents.length}</small>
+                    </button>
+                    {subagentsOpen && (
+                      <div className="subagent-list">
+                        {subagents.map((session) => (
+                          <SessionRow key={session.id} session={session} selectedId={selectedId} onSelect={onSelect} subagent rowRef={session.id === selectedId ? selectedRowRef : null} />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
+              </>
             )}
           </section>
         );
@@ -541,9 +606,10 @@ function SessionList({ sessions, selectedId, hasMore, loadingMore, onLoadMore, o
   );
 }
 
-function SessionRow({ session, selectedId, onSelect, subagent }) {
+function SessionRow({ session, selectedId, onSelect, subagent, rowRef }) {
   return (
     <button
+      ref={rowRef}
       className={`session-row ${subagent ? "subagent" : ""} ${session.id === selectedId ? "active" : ""}`}
       onClick={() => onSelect(session.id)}
     >
@@ -649,11 +715,13 @@ function SessionSurface({ session, authToken, backendUrl }) {
       </div>
       {outboxItems.length > 0 && (
         <div className="outbox">
-          <strong>远程队列</strong>
+          <strong>远程发送状态</strong>
           {outboxItems.map((item) => (
-            <span className={item.tone || ""} key={item.key}>
-              {item.label}
-            </span>
+            <div className={`outbox-row ${item.tone || ""}`} key={item.key}>
+              <span className="outbox-state">{item.state}</span>
+              <span className="outbox-message">{item.message}</span>
+              {item.detail && <small>{item.detail}</small>}
+            </div>
           ))}
         </div>
       )}
@@ -1332,16 +1400,49 @@ function isNativeShell() {
 }
 
 function visibleOutboxItems(items = []) {
-  return items
-    .slice()
-    .sort((a, b) => outboxItemTime(a) - outboxItemTime(b))
-    .map((item) => formatOutboxItem(item))
+  const merged = new Map();
+  for (const item of items.slice().sort((a, b) => outboxItemTime(a) - outboxItemTime(b))) {
+    if (String(item?.status || "") === "output") continue;
+    const key = outboxItemKey(item);
+    if (!key) continue;
+    const current = merged.get(key) || { key, time: 0 };
+    const next = {
+      ...current,
+      time: Math.max(current.time || 0, outboxItemTime(item)),
+      message: item?.message ? clipUi(item.message, 72) : current.message,
+      decision: item?.decision || current.decision,
+      actionId: item?.actionId || current.actionId,
+      error: item?.error || current.error,
+      status: statusPrecedence(item?.status) >= statusPrecedence(current.status) ? String(item?.status || current.status || "") : current.status
+    };
+    merged.set(key, next);
+  }
+  return [...merged.values()]
+    .sort((a, b) => a.time - b.time)
+    .map(formatOutboxRecord)
     .filter(Boolean)
-    .map((item) => ({
-      ...item,
-      label: item.status ? `${item.message} · ${item.status}` : item.message
-    }))
     .slice(-3);
+}
+
+function outboxItemKey(item) {
+  return String(item?.id || item?.serverRequestId || item?.actionId || item?.createdAt || item?.at || "");
+}
+
+function statusPrecedence(status) {
+  const order = {
+    queued: 1,
+    dispatching: 2,
+    needs_response: 3,
+    needs_input: 3,
+    needs_approval: 3,
+    queued_only: 4,
+    sent: 5,
+    failed: 6,
+    app_server_failed: 6
+  };
+  const value = String(status || "");
+  if (value.includes("failed")) return 6;
+  return order[value] || 0;
 }
 
 function outboxItemTime(item) {
@@ -1350,58 +1451,91 @@ function outboxItemTime(item) {
   return Number.isFinite(time) ? time : 0;
 }
 
-function formatOutboxItem(item) {
-  const status = String(item?.status || "");
-  const key = `${item?.id || item?.serverRequestId || item?.createdAt || item?.at}-${status}`;
-
-  if (item?.message) {
+function formatOutboxRecord(record) {
+  const status = String(record?.status || "");
+  if (!status && !record?.message && !record?.decision && !record?.actionId) return null;
+  if (record?.error || status.includes("failed")) {
     return {
-      key,
-      tone: statusTone(status),
-      message: `已发送：${clipUi(item.message, 72)}`,
-      status: outboxStatusText(status)
+      key: `${record.key}-failed`,
+      tone: "failed",
+      state: "失败",
+      message: record.error ? `发送失败：${clipUi(record.error, 72)}` : outboxRecordMessage(record),
+      detail: "未完成，请查看桌面端或重新发送"
     };
-  }
-
-  if (item?.decision || item?.actionId) {
-    return {
-      key,
-      tone: statusTone(status),
-      message: item.decision ? `已响应确认：${item.decision}` : "已响应确认",
-      status: outboxStatusText(status)
-    };
-  }
-
-  if (status === "output") return null;
-  if (status === "dispatching") {
-    return { key, tone: "syncing", message: "正在发送到 Codex Desktop", status: "同步中" };
   }
   if (status === "sent") {
-    return { key, tone: "synced", message: "已同步到 Codex Desktop", status: "完成" };
+    return {
+      key: `${record.key}-sent`,
+      tone: "synced",
+      state: "完成",
+      message: outboxRecordMessage(record),
+      detail: "已同步到 Codex Desktop"
+    };
   }
   if (status === "queued_only") {
-    return { key, tone: "waiting", message: "已加入本地队列", status: "等待同步" };
+    return {
+      key: `${record.key}-queued-only`,
+      tone: "waiting",
+      state: "仅本地队列",
+      message: outboxRecordMessage(record),
+      detail: "当前是队列/安全模式，还没有发送到 Codex Desktop"
+    };
   }
   if (["needs_approval", "needs_input", "needs_response"].includes(status)) {
-    return { key, tone: "waiting", message: "等待你处理确认", status: "待确认" };
+    return {
+      key: `${record.key}-needs-action`,
+      tone: "waiting",
+      state: "待确认",
+      message: outboxRecordMessage(record),
+      detail: "等待你处理授权或选择"
+    };
   }
-  if (status.includes("failed") || item?.error) {
-    return { key, tone: "failed", message: item?.error ? `发送失败：${clipUi(item.error, 72)}` : "发送失败", status: "失败" };
+  if (status === "dispatching") {
+    return {
+      key: `${record.key}-dispatching`,
+      tone: "syncing",
+      state: "发送中",
+      message: outboxRecordMessage(record),
+      detail: "正在发送到 Codex Desktop"
+    };
   }
-  return null;
+  if (status === "queued") {
+    return {
+      key: `${record.key}-queued`,
+      tone: "waiting",
+      state: "排队中",
+      message: outboxRecordMessage(record),
+      detail: "等待后端开始发送"
+    };
+  }
+  return {
+    key: `${record.key}-${status || "record"}`,
+    tone: statusTone(status),
+    state: outboxStatusText(status),
+    message: outboxRecordMessage(record)
+  };
+}
+
+function outboxRecordMessage(record) {
+  if (record?.message) return `消息：${record.message}`;
+  if (record?.decision) return `确认响应：${record.decision}`;
+  if (record?.actionId) return "确认响应已记录";
+  return "远程发送记录";
 }
 
 function statusTone(status) {
   if (status === "sent") return "synced";
-  if (status === "queued" || status === "dispatching") return "syncing";
+  if (status === "dispatching") return "syncing";
+  if (status === "queued" || status === "queued_only") return "waiting";
   if (status.includes("failed")) return "failed";
   return "";
 }
 
 function outboxStatusText(status) {
   if (status === "queued") return "排队中";
-  if (status === "dispatching") return "同步中";
+  if (status === "dispatching") return "发送中";
   if (status === "sent") return "完成";
+  if (status === "queued_only") return "仅本地队列";
   if (status === "failed") return "失败";
   return status || "记录";
 }

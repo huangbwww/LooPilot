@@ -158,6 +158,9 @@ test("critical mobile actions remain reachable from the authenticated workspace"
   assert.match(app, /approvalPolicy: permission\.approvalPolicy/);
   assert.match(app, /sandboxMode: permission\.sandboxMode/);
   assert.match(app, /onSent=\{\(\) => current\?\.id && loadDetail\(current\.id, authToken, backendUrl\)\.then\(setDetail\)\}/);
+  assert.match(app, /<strong>远程发送状态<\/strong>/);
+  assert.match(app, /className="outbox-state"/);
+  assert.match(app, /function formatOutboxRecord\(record\)/);
 });
 
 test("timeline renders markdown, local images, and compact tool summaries", () => {
@@ -183,21 +186,30 @@ test("timeline renders markdown, local images, and compact tool summaries", () =
   assert.match(css, /\.tool-details\s*\{/);
   assert.match(css, /\.timeline-toggle\s*\{/);
   assert.match(css, /\.collapsed-preview\s*\{/);
+  assert.match(css, /\.outbox-row\s*\{/);
+  assert.match(css, /\.outbox-state\s*\{/);
 });
 
 test("session drawer groups conversations by project like Codex desktop", () => {
   assert.match(app, /const groups = groupSessionsByProject\(sessions\)/);
   assert.match(app, /onScroll=\{handleScroll\}/);
   assert.match(app, /className="load-more-sessions"/);
-  assert.match(app, /<section className="project-group" key=\{group\.key\}>/);
-  assert.match(app, /<div className="project-header">[\s\S]+<Folder size=\{15\} \/>[\s\S]+<span>\{group\.name\}<\/span>/);
+  assert.match(app, /className="session-list-toolbar"/);
+  assert.match(app, /aria-label="全部展开项目"/);
+  assert.match(app, /aria-label="全部收起项目"/);
+  assert.match(app, /aria-label="定位当前对话"/);
+  assert.match(app, /<section className=\{`project-group \$\{projectOpen \? "open" : "collapsed"\}`\} key=\{group\.key\}>/);
+  assert.match(app, /className="project-header"[\s\S]+aria-expanded=\{projectOpen\}/);
+  assert.match(app, /projectOpen \? <FolderOpen size=\{15\} \/> : <Folder size=\{15\} \/>/);
   assert.match(app, /function groupSessionsByProject\(sessions\)/);
   assert.match(app, /function projectKey\(cwd\)/);
   assert.match(app, /function projectName\(cwd\)/);
   assert.ok(app.includes("split(/[\\\\/]+/)"));
 
   assert.match(css, /\.project-group\s*\{/);
+  assert.match(css, /\.session-list-toolbar\s*\{/);
   assert.match(css, /\.project-header\s*\{/);
+  assert.match(css, /\.project-group\.collapsed \.project-header > svg:first-child\s*\{/);
   assert.match(css, /\.load-more-sessions\s*\{/);
   assert.match(cssBlock(".session-row"), /min-height:\s*62px/);
 });

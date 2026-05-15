@@ -133,6 +133,38 @@ button {
   padding: 10px;
 }
 
+.session-list-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin: -2px 0 8px;
+  padding: 4px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(16, 22, 29, 0.96);
+}
+
+.session-list-toolbar button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+}
+
+.session-list-toolbar button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--panel-2);
+}
+
+.session-list-toolbar button:disabled {
+  opacity: 0.45;
+}
+
 .load-more-sessions {
   width: 100%;
   min-height: 38px;
@@ -152,13 +184,42 @@ button {
 
 .project-header {
   display: flex;
+  width: 100%;
   align-items: center;
   gap: 7px;
   min-height: 30px;
   padding: 0 6px;
   color: var(--muted);
+  background: transparent;
   font-size: 13px;
   font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.project-header:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.project-header > svg:first-child {
+  transition: transform 0.16s ease;
+}
+
+.project-group.collapsed .project-header > svg:first-child {
+  transform: rotate(-90deg);
+}
+
+.project-header span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-header small {
+  color: var(--muted);
 }
 
 .session-row {
@@ -939,25 +1000,54 @@ button {
 
 .outbox {
   display: grid;
-  gap: 6px;
+  gap: 8px;
   border-color: rgba(109, 182, 255, 0.22);
   background: rgba(109, 182, 255, 0.07);
 }
 
-.outbox span {
-  display: block;
+.outbox-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 8px;
+  align-items: start;
+  min-width: 0;
 }
 
-.outbox span.synced {
+.outbox-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 0 7px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.outbox-message,
+.outbox-row small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.outbox-row small {
+  grid-column: 2;
+  color: var(--muted);
+}
+
+.outbox-row.synced {
   color: var(--green);
 }
 
-.outbox span.syncing,
-.outbox span.waiting {
+.outbox-row.syncing,
+.outbox-row.waiting {
   color: var(--yellow);
 }
 
-.outbox span.failed {
+.outbox-row.failed {
   color: var(--red);
 }
 
