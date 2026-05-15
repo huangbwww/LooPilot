@@ -61,7 +61,10 @@ const rows = [
     payload: {
       type: "message",
       role: "assistant",
-      content: [{ type: "output_text", text: "working" }]
+      content: [
+        { type: "output_text", text: "working" },
+        { type: "local_image", path: "D:\\LooPilot\\phone.png", name: "phone.png", mime_type: "image/png" }
+      ]
     }
   },
   {
@@ -207,7 +210,8 @@ test("subagent sessions are exposed with parent metadata", () => {
 test("session detail includes timeline and pending user-input action", () => {
   const detail = store.getSessionDetail(sessionId);
   assert.equal(detail.timeline.some((item) => item.role === "user" && item.text === "hello"), true);
-  assert.equal(detail.timeline.some((item) => item.role === "assistant" && item.text === "working"), true);
+  assert.equal(detail.timeline.some((item) => item.role === "assistant" && item.text.includes("working")), true);
+  assert.equal(detail.timeline.some((item) => item.role === "assistant" && item.text.includes("![phone.png](D:\\LooPilot\\phone.png)")), true);
   assert.equal(detail.pendingAction.id, "ask-1");
   assert.equal(detail.pendingAction.kind, "input");
   assert.equal(detail.pendingAction.questions[0].id, "choice");

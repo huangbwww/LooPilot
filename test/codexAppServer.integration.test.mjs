@@ -16,6 +16,12 @@ test("app-server bridge starts a turn and answers approval requests", { timeout:
         cwd: process.cwd()
       },
       message: "hello from phone",
+      attachments: [{
+        name: "phone.png",
+        path: "D:\\LooPilot\\.loopilot\\attachments\\phone.png",
+        mimeType: "image/png",
+        size: 68
+      }],
       model: "gpt-5.5",
       reasoning: "high",
       approvalPolicy: "on-request",
@@ -38,7 +44,10 @@ test("app-server bridge starts a turn and answers approval requests", { timeout:
     assert.equal(fake.threadResumeParams.config.sandbox_mode, "workspace-write");
     assert.equal(fake.turnStartParams.model, "gpt-5.5");
     assert.equal(fake.turnStartParams.effort, "high");
-    assert.deepEqual(fake.turnStartParams.input, [{ type: "text", text: "hello from phone", text_elements: [] }]);
+    assert.deepEqual(fake.turnStartParams.input, [
+      { type: "text", text: "hello from phone", text_elements: [] },
+      { type: "local_image", path: "D:\\LooPilot\\.loopilot\\attachments\\phone.png", mime_type: "image/png" }
+    ]);
   } finally {
     await fake.close();
   }

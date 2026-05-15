@@ -10,7 +10,7 @@ const BRIDGE_MODE = process.env.LOOPILOT_BRIDGE_MODE || "app-server";
 const DISABLE_CLI_FALLBACK = process.env.LOOPILOT_DISABLE_CLI_FALLBACK === "1";
 const ENABLE_CLI_FALLBACK = process.env.LOOPILOT_ENABLE_CLI_FALLBACK === "1";
 
-export function dispatchRemoteMessage({ sessionId, message, model, reasoning, approvalPolicy, sandboxMode, recordId, onUpdate }) {
+export function dispatchRemoteMessage({ sessionId, message, attachments = [], model, reasoning, approvalPolicy, sandboxMode, recordId, onUpdate }) {
   const session = getSessionDetail(sessionId);
   const safeApprovalPolicy = normalizeApprovalPolicy(approvalPolicy);
   const safeSandboxMode = normalizeSandboxMode(sandboxMode) || defaultSandboxModeForApproval(safeApprovalPolicy);
@@ -34,7 +34,8 @@ export function dispatchRemoteMessage({ sessionId, message, model, reasoning, ap
     command: "codex app-server turn/start",
     transport: "app-server",
     startedAt: new Date().toISOString(),
-    cwd: session.cwd || process.cwd()
+    cwd: session.cwd || process.cwd(),
+    attachments: attachmentSummaries(attachments)
   };
   appendBridgeJob(sessionId, job);
   onUpdate?.(job);
@@ -55,6 +56,7 @@ export function dispatchRemoteMessage({ sessionId, message, model, reasoning, ap
   startTurnViaAppServer({
     session,
     message,
+    attachments,
     model,
     reasoning,
     approvalPolicy: safeApprovalPolicy,
@@ -93,7 +95,7 @@ export function dispatchRemoteMessage({ sessionId, message, model, reasoning, ap
       activeJobs.delete(sessionId);
       return;
     }
-    dispatchViaCli({ session, sessionId, message, model, reasoning, approvalPolicy: safeApprovalPolicy, sandboxMode: safeSandboxMode, recordId, onUpdate });
+    dispatchViaCli({ session, sessionId, message, attachments, model, reasoning, approvalPolicy: safeApprovalPolicy, sandboxMode: safeSandboxMode, recordId, onUpdate });
   });
 
   activeJobs.set(sessionId, { transport: "app-server" });
@@ -104,14 +106,15 @@ export function resolveBridgeRequest(actionId, decision) {
   return respondToServerRequest(actionId, decision);
 }
 
-function dispatchViaCli({ session, sessionId, message, model, reasoning, approvalPolicy, sandboxMode, recordId, onUpdate }) {
+function dispatchViaCli({ session, sessionId, message, attachments = [], model, reasoning, approvalPolicy, sandboxMode, recordId, onUpdate }) {
   const cwd = session.cwd || process.cwd();
+  const cliMessage = messageWithAttachmentRefs(message, attachments);
   const args = ["resume", "-C", cwd, "--no-alt-screen"];
   if (model) args.push("-m", model);
   if (reasoning) args.push("-c", `model_reasoning_effort="${reasoning}"`);
   if (approvalPolicy) args.push("-c", `approval_policy="${approvalPolicy}"`);
   if (sandboxMode) args.push("-c", `sandbox_mode="${sandboxMode}"`);
-  args.push(sessionId, message);
+  args.push(sessionId, cliMessage);
 
   const command = codexCommand();
   if (!isSafeCliFallbackCommand(command)) {
@@ -163,6 +166,35 @@ function dispatchViaCli({ session, sessionId, message, model, reasoning, approva
     onUpdate?.(update);
   });
 
+}
+
+function attachmentSummaries(attachments = []) {
+  return attachments.map((attachment) => ({
+    name: attachment.name,
+    mimeType: attachment.mimeType,
+    size: attachment.size,
+    path: attachment.path
+  }));
+}
+
+function messageWithAttachmentRefs(message, attachments = []) {
+  const text = String(message || "").trim();
+  if (!attachments.length) return text;
+  const lines = text ? [text, ""] : [];
+  lines.push("Image attachments:");
+  for (const attachment of attachments) {
+    lines.push(`![${escapeMarkdownLabel(attachment.name || "image")}](${markdownUrlForPath(attachment.path)})`);
+  }
+  return lines.join("\n");
+}
+
+function markdownUrlForPath(filePath) {
+  const value = String(filePath || "");
+  return /\s/.test(value) ? `<${value}>` : value;
+}
+
+function escapeMarkdownLabel(value) {
+  return String(value || "").replace(/[\]\\]/g, "\\$&");
 }
 
 function appendBridgeOutput(sessionId, recordId, stream, chunk, onUpdate) {

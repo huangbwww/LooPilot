@@ -1038,6 +1038,17 @@ button {
   color: var(--muted);
 }
 
+.outbox-attachments {
+  grid-column: 2;
+  display: grid;
+  gap: 8px;
+  max-width: 320px;
+}
+
+.outbox-attachments .markdown-image {
+  max-height: 180px;
+}
+
 .outbox-row.synced {
   color: var(--green);
 }
@@ -1079,6 +1090,65 @@ button {
   min-width: 0;
   max-width: 920px;
   margin: 0 auto 10px;
+}
+
+.attachment-strip,
+.attachment-error {
+  width: 100%;
+  min-width: 0;
+  max-width: 920px;
+  margin: 0 auto 8px;
+}
+
+.attachment-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.attachment-chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  max-width: min(280px, 78vw);
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 7px;
+  color: var(--text);
+  background: var(--panel);
+}
+
+.attachment-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-chip button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+}
+
+.attachment-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.attachment-error {
+  color: var(--red);
+  font-size: 13px;
 }
 
 .input-row {

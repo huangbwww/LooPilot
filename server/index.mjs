@@ -2,6 +2,7 @@ import express from "express";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import chokidar from "chokidar";
 import QRCode from "qrcode";
@@ -30,6 +31,7 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const buildDir = path.join(root, "build");
+const attachmentsDir = path.join(getStateDir(), "attachments");
 const args = new Set(process.argv.slice(2));
 const port = Number(process.env.PORT || 4317);
 const authToken = getAuthToken();
@@ -47,10 +49,13 @@ keepAliveTimer.unref?.();
 const pairAttempts = new Map();
 const PAIR_ATTEMPT_LIMIT = 8;
 const PAIR_ATTEMPT_WINDOW_MS = 5 * 60 * 1000;
+const MAX_ATTACHMENT_COUNT = 6;
+const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 
 ensureStateDirs();
+fs.mkdirSync(attachmentsDir, { recursive: true });
 
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "64mb" }));
 app.use(corsForShellClients);
 
 function corsForShellClients(req, res, next) {
@@ -121,25 +126,33 @@ app.get("/api/sessions/:id/media", (req, res) => {
   if (!stat?.isFile()) return res.status(404).json({ error: "Image not found" });
   res.type(mediaType);
   res.set("Cache-Control", "private, max-age=60");
-  res.sendFile(realPath);
+  res.sendFile(realPath, { dotfiles: "allow" });
 });
 
 app.post("/api/sessions/:id/messages", (req, res) => {
   const message = String(req.body?.message || "").trim();
-  if (!message) return res.status(400).json({ error: "Message is required" });
   if (!getSessionDetail(req.params.id)) return res.status(404).json({ error: "Session not found" });
+  let attachments = [];
+  try {
+    attachments = saveMessageAttachments(req.params.id, req.body?.attachments);
+  } catch (error) {
+    return res.status(error.status || 400).json({ error: error.message });
+  }
+  if (!message && attachments.length === 0) return res.status(400).json({ error: "Message or image attachment is required" });
   const approvalPolicy = normalizeApprovalPolicy(req.body?.approvalPolicy);
   const sandboxMode = normalizeSandboxMode(req.body?.sandboxMode) || defaultSandboxModeForApproval(approvalPolicy);
-  const record = enqueueRemoteMessage(req.params.id, message, {
+  const record = enqueueRemoteMessage(req.params.id, message || imageOnlyMessage(attachments), {
     model: req.body?.model,
     reasoning: req.body?.reasoning,
     approvalPolicy,
-    sandboxMode
+    sandboxMode,
+    attachments
   });
   broadcast({ type: "outbox", record });
   const dispatch = dispatchRemoteMessage({
     sessionId: req.params.id,
     message,
+    attachments,
     model: req.body?.model,
     reasoning: req.body?.reasoning,
     approvalPolicy,
@@ -317,6 +330,71 @@ function imageMediaType(filePath) {
   }[extension] || "";
 }
 
+function saveMessageAttachments(sessionId, rawAttachments) {
+  const list = Array.isArray(rawAttachments) ? rawAttachments : [];
+  if (list.length > MAX_ATTACHMENT_COUNT) throw httpError(413, `At most ${MAX_ATTACHMENT_COUNT} images can be sent at once`);
+  const saved = [];
+  if (!list.length) return saved;
+  const batchDir = path.join(attachmentsDir, safePathSegment(sessionId), randomUUID());
+  fs.mkdirSync(batchDir, { recursive: true });
+
+  list.forEach((item, index) => {
+    const dataUrl = String(item?.data || "");
+    const match = dataUrl.match(/^data:(image\/(?:png|jpeg|jpg|gif|webp|bmp));base64,([A-Za-z0-9+/=\r\n]+)$/i);
+    if (!match) throw httpError(415, "Only PNG, JPG, GIF, WebP, and BMP image attachments are supported");
+    const mimeType = match[1].toLowerCase() === "image/jpg" ? "image/jpeg" : match[1].toLowerCase();
+    const buffer = Buffer.from(match[2].replace(/\s/g, ""), "base64");
+    if (buffer.length <= 0) throw httpError(400, "Image attachment is empty");
+    if (buffer.length > MAX_ATTACHMENT_BYTES) throw httpError(413, "Each image attachment must be 8 MB or smaller");
+    const originalName = sanitizeFileName(item?.name || `image-${index + 1}${extensionForMime(mimeType)}`);
+    const extension = imageMediaType(originalName) ? path.extname(originalName) : extensionForMime(mimeType);
+    const baseName = sanitizeFileName(path.basename(originalName, path.extname(originalName))) || `image-${index + 1}`;
+    const fileName = `${String(index + 1).padStart(2, "0")}-${baseName}${extension}`;
+    const filePath = path.join(batchDir, fileName);
+    fs.writeFileSync(filePath, buffer);
+    saved.push({
+      name: originalName,
+      mimeType,
+      size: buffer.length,
+      path: filePath
+    });
+  });
+  return saved;
+}
+
+function imageOnlyMessage(attachments) {
+  if (attachments.length === 1) return `Image: ${attachments[0].name}`;
+  return `Images: ${attachments.map((item) => item.name).join(", ")}`;
+}
+
+function httpError(status, message) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
+function extensionForMime(mimeType) {
+  return {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "image/bmp": ".bmp"
+  }[mimeType] || ".png";
+}
+
+function sanitizeFileName(value) {
+  return String(value || "")
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+}
+
+function safePathSegment(value) {
+  return String(value || "session").replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 120) || "session";
+}
+
 function safeStat(filePath) {
   try {
     return fs.statSync(filePath);
@@ -335,6 +413,7 @@ function safeRealpath(filePath) {
 
 function isSessionMediaPath(session, realPath) {
   const allowed = new Set();
+  if (isUploadedAttachmentPath(session.id, realPath)) return true;
   for (const item of session.timeline || []) {
     for (const src of markdownImageSources(item.text || "")) {
       const normalized = normalizeMediaPath(src);
@@ -343,15 +422,22 @@ function isSessionMediaPath(session, realPath) {
       if (referencedRealPath) allowed.add(normalizePathKey(referencedRealPath));
     }
   }
+  for (const record of session.outbox || []) {
+    for (const attachment of record.options?.attachments || []) {
+      const referencedRealPath = safeRealpath(attachment.path || "");
+      if (referencedRealPath) allowed.add(normalizePathKey(referencedRealPath));
+    }
+  }
   return allowed.has(normalizePathKey(realPath));
 }
 
 function markdownImageSources(text) {
-  return [...String(text || "").matchAll(/!\[[^\]]*]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g)].map((match) => match[1]);
+  return [...String(text || "").matchAll(/!\[[^\]]*]\(((?:<[^>]+>)|(?:[^)\s]+))(?:\s+["'][^"']*["'])?\)/g)].map((match) => match[1]);
 }
 
 function normalizeMediaPath(value) {
   let input = String(value || "").trim();
+  if (input.startsWith("<") && input.endsWith(">")) input = input.slice(1, -1).trim();
   try {
     input = decodeURIComponent(input);
   } catch {
@@ -369,4 +455,12 @@ function normalizeMediaPath(value) {
 function normalizePathKey(filePath) {
   const normalized = path.normalize(filePath);
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+}
+
+function isUploadedAttachmentPath(sessionId, realPath) {
+  const root = safeRealpath(path.join(attachmentsDir, safePathSegment(sessionId)));
+  if (!root) return false;
+  const rootKey = normalizePathKey(root);
+  const realKey = normalizePathKey(realPath);
+  return realKey === rootKey || realKey.startsWith(`${rootKey}${path.sep}`);
 }

@@ -153,7 +153,11 @@ test("critical mobile actions remain reachable from the authenticated workspace"
   assert.match(app, /className="answer-input"/);
   assert.match(app, /placeholder="Custom answer"/);
   assert.match(app, /\.\.\.\(canChooseApprovalScope \? \{ scope: approvalScope \} : \{\}\)/);
-  assert.match(app, /disabled=\{sending \|\| !message\.trim\(\) \|\| !session\?\.id\}/);
+  assert.match(app, /const \[attachments, setAttachments\] = useState\(\[\]\)/);
+  assert.match(app, /className="attachment-input"/);
+  assert.match(app, /accept="image\/\*"/);
+  assert.match(app, /attachments: attachmentPayloads/);
+  assert.match(app, /disabled=\{!canSend\}/);
   assert.match(app, /permissionPreset: permission\.value/);
   assert.match(app, /approvalPolicy: permission\.approvalPolicy/);
   assert.match(app, /sandboxMode: permission\.sandboxMode/);

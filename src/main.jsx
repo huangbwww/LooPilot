@@ -12,6 +12,7 @@ import {
   Clock3,
   Folder,
   FolderOpen,
+  ImagePlus,
   ListCollapse,
   ListTree,
   LocateFixed,
@@ -55,6 +56,7 @@ const storedTokenKey = "loopilot.authToken";
 const sessionPageSize = 16;
 const detailItemLimit = 120;
 const latestScrollThreshold = 96;
+const maxImageAttachmentBytes = 8 * 1024 * 1024;
 
 function App() {
   const nativeShell = isNativeShell();
@@ -721,6 +723,20 @@ function SessionSurface({ session, authToken, backendUrl }) {
               <span className="outbox-state">{item.state}</span>
               <span className="outbox-message">{item.message}</span>
               {item.detail && <small>{item.detail}</small>}
+              {item.attachments?.length > 0 && (
+                <div className="outbox-attachments">
+                  {item.attachments.map((attachment, index) => (
+                    <ImageBlock
+                      key={`${attachment.path || attachment.name}-${index}`}
+                      src={attachment.path}
+                      alt={attachment.name || "image"}
+                      sessionId={session.id}
+                      authToken={authToken}
+                      backendUrl={backendUrl}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -840,6 +856,7 @@ function TimelineItem({ item, sessionId, authToken, backendUrl }) {
   const [collapsed, setCollapsed] = useState(false);
   const isTool = item.kind === "tool";
   const isToolOutput = item.kind === "tool-output";
+  const isImageTool = isTool && item.title === "view_image";
   const preview = collapsePreview(item.text);
   const role = timelineRole(item);
   return (
@@ -864,7 +881,9 @@ function TimelineItem({ item, sessionId, authToken, backendUrl }) {
         <p className="collapsed-preview">{preview}</p>
       ) : (
         <>
-          {isTool && <pre className="tool-summary">{item.text}</pre>}
+          {isTool && (isImageTool
+            ? <MarkdownContent text={item.text} sessionId={sessionId} authToken={authToken} backendUrl={backendUrl} />
+            : <pre className="tool-summary">{item.text}</pre>)}
           {isToolOutput && (
             <details className="tool-details">
               <summary>查看工具输出</summary>
@@ -1003,7 +1022,7 @@ function renderMarkdownBlocks(text, sessionId, authToken, backendUrl) {
 }
 
 function renderInline(text, sessionId, authToken, backendUrl, keyPrefix) {
-  const pattern = /(!?\[([^\]]*)\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\))|(`([^`]+)`)|(\*\*([^*]+)\*\*)/g;
+  const pattern = /(!?\[([^\]]*)\]\(((?:<[^>]+>)|(?:[^)\s]+))(?:\s+["'][^"']*["'])?\))|(`([^`]+)`)|(\*\*([^*]+)\*\*)/g;
   const parts = [];
   let cursor = 0;
   let match = null;
@@ -1020,11 +1039,11 @@ function renderInline(text, sessionId, authToken, backendUrl, keyPrefix) {
   while ((match = pattern.exec(text)) !== null) {
     pushText(text.slice(cursor, match.index));
     if (match[1]?.startsWith("!")) {
-      parts.push(<ImageBlock key={`${keyPrefix}-img-${parts.length}`} src={match[3]} alt={match[2]} sessionId={sessionId} authToken={authToken} backendUrl={backendUrl} />);
+      parts.push(<ImageBlock key={`${keyPrefix}-img-${parts.length}`} src={markdownUrlValue(match[3])} alt={match[2]} sessionId={sessionId} authToken={authToken} backendUrl={backendUrl} />);
     } else if (match[1]) {
-      const href = safeHref(match[3]);
+      const href = safeHref(markdownUrlValue(match[3]));
       parts.push(href
-        ? <a key={`${keyPrefix}-a-${parts.length}`} href={href} target="_blank" rel="noreferrer">{match[2] || match[3]}</a>
+        ? <a key={`${keyPrefix}-a-${parts.length}`} href={href} target="_blank" rel="noreferrer">{match[2] || markdownUrlValue(match[3])}</a>
         : match[2]);
     } else if (match[4]) {
       parts.push(<code key={`${keyPrefix}-code-${parts.length}`}>{match[5]}</code>);
@@ -1096,11 +1115,12 @@ function safeHref(value) {
 }
 
 function isDirectImageSrc(value) {
-  return /^https:\/\//i.test(value);
+  return /^https?:\/\//i.test(value) || /^data:image\//i.test(value);
 }
 
 function imagePathFromMarkdown(value) {
   let input = String(value || "").trim();
+  input = markdownUrlValue(input);
   try {
     input = decodeURIComponent(input);
   } catch {
@@ -1112,6 +1132,11 @@ function imagePathFromMarkdown(value) {
     return `/${input}`;
   }
   return input.replace(/^file:\/\//i, "");
+}
+
+function markdownUrlValue(value) {
+  const input = String(value || "").trim();
+  return input.startsWith("<") && input.endsWith(">") ? input.slice(1, -1).trim() : input;
 }
 
 function Composer({
@@ -1127,27 +1152,65 @@ function Composer({
   onSent
 }) {
   const [message, setMessage] = useState("");
+  const [attachments, setAttachments] = useState([]);
+  const [attachmentError, setAttachmentError] = useState("");
   const [sending, setSending] = useState(false);
+  const fileInputRef = useRef(null);
   const permission = permissionPresetOptions.find((option) => option.value === permissionPreset) || permissionPresetOptions[0];
+  const canSend = Boolean((message.trim() || attachments.length > 0) && session?.id && !sending);
   async function submit(event) {
     event.preventDefault();
-    if (!message.trim() || !session?.id) return;
+    if (!canSend) return;
     setSending(true);
-    await authedFetch(`/api/sessions/${session.id}/messages`, authToken, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message,
-        model,
-        reasoning,
-        permissionPreset: permission.value,
-        approvalPolicy: permission.approvalPolicy,
-        sandboxMode: permission.sandboxMode
-      })
-    }, backendUrl);
-    setMessage("");
-    setSending(false);
-    onSent();
+    setAttachmentError("");
+    try {
+      const attachmentPayloads = await Promise.all(attachments.map((file) => fileToAttachmentPayload(file)));
+      const response = await authedFetch(`/api/sessions/${session.id}/messages`, authToken, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          attachments: attachmentPayloads,
+          model,
+          reasoning,
+          permissionPreset: permission.value,
+          approvalPolicy: permission.approvalPolicy,
+          sandboxMode: permission.sandboxMode
+        })
+      }, backendUrl);
+      if (!response.ok) throw new Error(await responseErrorText(response));
+      setMessage("");
+      setAttachments([]);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      onSent();
+    } catch (error) {
+      setAttachmentError(error.message || "Image send failed");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  function addAttachments(event) {
+    const files = Array.from(event.target.files || []);
+    setAttachmentError("");
+    const accepted = [];
+    for (const file of files) {
+      if (!file.type.startsWith("image/")) {
+        setAttachmentError("Only image files can be attached");
+        continue;
+      }
+      if (file.size > maxImageAttachmentBytes) {
+        setAttachmentError("Each image must be 8 MB or smaller");
+        continue;
+      }
+      accepted.push(file);
+    }
+    if (accepted.length) setAttachments((current) => [...current, ...accepted].slice(0, 6));
+    event.target.value = "";
+  }
+
+  function removeAttachment(index) {
+    setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index));
   }
 
   return (
@@ -1163,20 +1226,59 @@ function Composer({
           onChange={setPermissionPreset}
         />
       </div>
+      {attachments.length > 0 && (
+        <div className="attachment-strip">
+          {attachments.map((file, index) => (
+            <span className="attachment-chip" key={`${file.name}-${file.lastModified}-${index}`}>
+              <ImagePlus size={14} />
+              <span>{file.name}</span>
+              <button type="button" aria-label="Remove image" onClick={() => removeAttachment(index)}><X size={13} /></button>
+            </span>
+          ))}
+        </div>
+      )}
+      {attachmentError && <div className="attachment-error">{attachmentError}</div>}
       <div className="input-row">
         <button type="button" className="icon-button" aria-label="返回"><ChevronLeft size={18} /></button>
+        <button type="button" className="icon-button" aria-label="Attach image" onClick={() => fileInputRef.current?.click()}>
+          <ImagePlus size={18} />
+        </button>
+        <input ref={fileInputRef} className="attachment-input" type="file" accept="image/*" multiple onChange={addAttachments} />
         <textarea
           value={message}
           onChange={(event) => setMessage(event.target.value)}
           placeholder="给当前 Codex 会话发送消息"
           rows={1}
         />
-        <button className="send-button" disabled={sending || !message.trim() || !session?.id} aria-label="发送">
+        <button className="send-button" disabled={!canSend} aria-label="发送">
           <Send size={18} />
         </button>
       </div>
     </form>
   );
+}
+
+async function responseErrorText(response) {
+  try {
+    const data = await response.json();
+    return data.error || `Request failed (${response.status})`;
+  } catch {
+    return `Request failed (${response.status})`;
+  }
+}
+
+function fileToAttachmentPayload(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve({
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      data: String(reader.result || "")
+    });
+    reader.onerror = () => reject(new Error("Unable to read image attachment"));
+    reader.readAsDataURL(file);
+  });
 }
 
 function OptionMenu({ icon, label, value, options, onChange }) {
@@ -1410,6 +1512,7 @@ function visibleOutboxItems(items = []) {
       ...current,
       time: Math.max(current.time || 0, outboxItemTime(item)),
       message: item?.message ? clipUi(item.message, 72) : current.message,
+      attachments: item?.options?.attachments || item?.attachments || current.attachments || [],
       decision: item?.decision || current.decision,
       actionId: item?.actionId || current.actionId,
       error: item?.error || current.error,
@@ -1419,7 +1522,10 @@ function visibleOutboxItems(items = []) {
   }
   return [...merged.values()]
     .sort((a, b) => a.time - b.time)
-    .map(formatOutboxRecord)
+    .map((record) => {
+      const formatted = formatOutboxRecord(record);
+      return formatted ? { ...formatted, attachments: record.attachments || [] } : null;
+    })
     .filter(Boolean)
     .slice(-3);
 }

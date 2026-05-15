@@ -23,7 +23,7 @@ let currentOnUpdate = null;
 const pending = new Map();
 const serverRequests = new Map();
 
-export async function startTurnViaAppServer({ session, message, model, reasoning, approvalPolicy, sandboxMode, onUpdate }) {
+export async function startTurnViaAppServer({ session, message, attachments = [], model, reasoning, approvalPolicy, sandboxMode, onUpdate }) {
   currentOnUpdate = onUpdate;
   await ensureConnected(onUpdate);
   const safeApprovalPolicy = normalizeApprovalPolicy(approvalPolicy);
@@ -36,11 +36,26 @@ export async function startTurnViaAppServer({ session, message, model, reasoning
   });
   return request("turn/start", {
     threadId: session.id,
-    input: [{ type: "text", text: message, text_elements: [] }],
+    input: turnInput(message, attachments),
     cwd: session.cwd || process.cwd(),
     model: model || null,
     effort: reasoning || null
   });
+}
+
+function turnInput(message, attachments = []) {
+  const input = [];
+  const text = String(message || "").trim();
+  if (text) input.push({ type: "text", text, text_elements: [] });
+  for (const attachment of attachments) {
+    if (!attachment?.path) continue;
+    input.push({
+      type: "local_image",
+      path: attachment.path,
+      mime_type: attachment.mimeType || null
+    });
+  }
+  return input.length ? input : [{ type: "text", text: "", text_elements: [] }];
 }
 
 export function respondToServerRequest(requestId, decision) {

@@ -441,11 +441,48 @@ function flattenContent(content) {
   return content
     .map((part) => {
       if (typeof part === "string") return part;
+      const imageSource = imageSourceFromContentPart(part);
+      if (imageSource) return `![${escapeMarkdownLabel(part.alt || part.name || "image")}](${markdownUrlForPath(imageSource)})`;
       return part.text || part.input_text || part.output_text || "";
     })
     .filter(Boolean)
     .join("\n")
     .trim();
+}
+
+function imageSourceFromContentPart(part) {
+  if (!part || typeof part !== "object") return "";
+  const candidates = [
+    part.path,
+    part.file_path,
+    part.local_path,
+    typeof part.image_url === "string" ? part.image_url : part.image_url?.url,
+    typeof part.image === "string" ? part.image : part.image?.path || part.image?.url,
+    part.url,
+    part.source?.path,
+    part.source?.url
+  ];
+  const value = candidates.find((item) => typeof item === "string" && item.trim());
+  if (!value) return "";
+  if (isImageLikeContentPart(part) || isImageLikePath(value)) return value.trim();
+  return "";
+}
+
+function isImageLikeContentPart(part) {
+  return /image/i.test(String(part.type || part.mimeType || part.mime_type || ""));
+}
+
+function isImageLikePath(value) {
+  return /\.(png|jpe?g|gif|webp|bmp)(?:[?#].*)?$/i.test(value) || /^data:image\//i.test(value);
+}
+
+function markdownUrlForPath(value) {
+  const text = String(value || "");
+  return /\s/.test(text) ? `<${text}>` : text;
+}
+
+function escapeMarkdownLabel(value) {
+  return String(value || "").replace(/[\]\\]/g, "\\$&");
 }
 
 function pushTimeline(timeline, detail, item) {
@@ -506,7 +543,7 @@ function summarizeToolCall(name, value) {
   }
 
   if (name === "apply_patch") return "修改文件";
-  if (name === "view_image") return args.path ? `查看图片：${args.path}` : "查看图片";
+  if (name === "view_image") return args.path ? `View image\n\n![image](${markdownUrlForPath(args.path)})` : "View image";
   if (name.includes("browser") || name.includes("screenshot")) return `浏览器操作：${name}`;
   if (name === "request_user_input") return "等待用户选择或输入";
   if (name === "request_plugin_install") return "请求安装插件或连接器";

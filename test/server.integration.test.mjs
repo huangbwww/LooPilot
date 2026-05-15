@@ -134,6 +134,34 @@ test("local server exposes token-protected sessions, websocket sync, and queue s
     assert.equal(send.body.record.options.approvalPolicy, "on-request");
     assert.equal(send.body.record.options.sandboxMode, "workspace-write");
 
+    const imageSend = await requestJson(port, `/api/sessions/${fixture.sessionId}/messages`, token, {
+      method: "POST",
+      body: JSON.stringify({
+        message: "please inspect this image",
+        attachments: [{
+          name: "phone.png",
+          type: "image/png",
+          data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        }],
+        model: "gpt-5.5",
+        reasoning: "high",
+        approvalPolicy: "never",
+        sandboxMode: "danger-full-access"
+      })
+    });
+    assert.equal(imageSend.status, 202);
+    assert.equal(imageSend.body.record.options.attachments.length, 1);
+    assert.equal(imageSend.body.record.options.attachments[0].mimeType, "image/png");
+    assert.ok(fs.existsSync(imageSend.body.record.options.attachments[0].path));
+
+    const uploadedImage = await requestText(
+      port,
+      `/api/sessions/${fixture.sessionId}/media?path=${encodeURIComponent(imageSend.body.record.options.attachments[0].path)}`,
+      { Authorization: `Bearer ${token}` }
+    );
+    assert.equal(uploadedImage.status, 200, uploadedImage.body);
+    assert.equal(uploadedImage.headers["content-type"], "image/png");
+
     const action = await requestJson(port, `/api/sessions/${fixture.sessionId}/actions/ask-1`, token, {
       method: "POST",
       body: JSON.stringify({ decision: "approved", answers: { mode: ["Custom"] }, scope: "session" })
