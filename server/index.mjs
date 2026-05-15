@@ -230,7 +230,9 @@ server.listen(port, async () => {
   console.log(`LooPilot running at ${localUrl}`);
   console.log(`Authorized URL: ${localUrlWithToken}`);
   console.log(`Pairing code: ${pairingCode}`);
-  await printPairingQr(localUrl, pairingCode);
+  if (!args.has("--public")) {
+    await printPairingQr(localUrl, pairingCode);
+  }
   console.log(`Reading Codex sessions from ${getCodexHome()}`);
   if (args.has("--public")) {
     await startTunnel(port);
@@ -246,8 +248,13 @@ function broadcast(payload) {
 
 async function startTunnel(targetPort) {
   try {
+    const printedUrls = new Set();
     tunnelHandle = await startPublicTunnel(targetPort, {
-      onUrl: (publicUrl) => printPairingQr(publicUrl, pairingCode)
+      onUrl: (publicUrl) => {
+        if (printedUrls.has(publicUrl)) return;
+        printedUrls.add(publicUrl);
+        printPairingQr(publicUrl, pairingCode);
+      }
     });
   } catch (error) {
     console.error(`Unable to start public tunnel: ${error.message}`);
