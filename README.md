@@ -2,6 +2,8 @@
 
 Mobile companion for Codex Desktop sessions.
 
+Languages: English | [简体中文](README.zh-CN.md)
+
 ## Why I built this
 
 I built LooPilot for the same reason many people build mobile Codex companions: I wanted to check on my Codex work during lunch, on the way home, or during a short break away from my Windows machine. The name is intentionally a little silly. It can read like "loop pilot", a small co-pilot that keeps a Codex loop moving, and also like "loo pilot", because sometimes the most realistic mobile workflow is checking whether Codex is still alive while you are away from your desk.
