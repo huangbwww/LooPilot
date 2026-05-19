@@ -98,6 +98,9 @@ test("phone layout exposes drawer navigation, scrim dismissal, and safe-area con
   assert.match(cssBlock(".mobile-only", mobile), /display:\s*grid/);
   assert.match(cssBlock(".session-surface"), /overflow-x:\s*hidden/);
   assert.match(cssBlock(".session-surface"), /overflow-y:\s*auto/);
+  assert.match(cssBlock(".control-row", mobile), /grid-template-columns:\s*minmax\(0,\s*1\.05fr\)\s+minmax\(0,\s*0\.8fr\)\s+minmax\(0,\s*1\.08fr\)/);
+  assert.match(cssBlock(".option-menu.has-compact-label .option-label-full", mobile), /display:\s*none/);
+  assert.match(cssBlock(".option-menu.has-compact-label .option-label-compact", mobile), /display:\s*inline/);
   assert.match(cssBlock(".choice-grid", mobile), /grid-template-columns:\s*1fr/);
 });
 
@@ -140,13 +143,15 @@ test("critical mobile actions remain reachable from the authenticated workspace"
   assert.match(app, /function mergeSessionLists\(primary, secondary\)/);
   assert.match(app, /const permissionPresetOptions = \[/);
   assert.match(app, /const approvalScopeOptions = \[/);
-  assert.match(app, /value: "default", label: "默认权限", approvalPolicy: "on-request", sandboxMode: "workspace-write"/);
-  assert.match(app, /value: "auto-review", label: "自动审查", approvalPolicy: "never", sandboxMode: "read-only"/);
-  assert.match(app, /value: "full-access", label: "完全访问权限", approvalPolicy: "never", sandboxMode: "danger-full-access"/);
+  assert.match(app, /value: "default", label: "默认权限", shortLabel: "默认", approvalPolicy: "on-request", sandboxMode: "workspace-write"/);
+  assert.match(app, /value: "auto-review", label: "自动审查", shortLabel: "自动", approvalPolicy: "never", sandboxMode: "read-only"/);
+  assert.match(app, /value: "full-access", label: "完全访问权限", shortLabel: "完全访问", approvalPolicy: "never", sandboxMode: "danger-full-access"/);
   assert.match(app, /const \[permissionPreset, setPermissionPreset\] = useState\("full-access"\)/);
   assert.match(app, /<OptionMenu icon=\{<Sparkles size=\{15\} \/>\} label="Model" value=\{model\}/);
   assert.match(app, /<OptionMenu icon=\{<Settings2 size=\{15\} \/>\} label="Reasoning" value=\{reasoning\}/);
   assert.match(app, /label="权限"[\s\S]+value=\{permissionPreset\}/);
+  assert.match(app, /const hasCompactLabel = selectedShortLabel !== selectedLabel/);
+  assert.match(app, /className=\{`option-menu \$\{open \? "open" : ""\} \$\{hasCompactLabel \? "has-compact-label" : ""\}`\}/);
   assert.match(app, /className="permission-scope"/);
   assert.match(app, /<textarea[\s\S]+onChange=\{\(event\) => setMessage\(event\.target\.value\)\}/);
   assert.match(app, /const \[customAnswers, setCustomAnswers\] = useState\(\{\}\)/);

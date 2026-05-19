@@ -1182,11 +1182,15 @@ button {
   color: var(--text);
 }
 
-.option-trigger span {
+.option-trigger .option-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.option-label-compact {
+  display: none;
 }
 
 .option-list {
@@ -1315,17 +1319,25 @@ textarea {
 
   .control-row {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.8fr) minmax(0, 1.08fr);
+    gap: 5px;
     overflow: visible;
   }
 
   .option-trigger {
     width: 100%;
     min-width: 0;
-    gap: 5px;
-    padding: 0 7px;
-    font-size: 14px;
+    gap: 4px;
+    padding: 0 6px;
+    font-size: 13px;
+  }
+
+  .option-menu.has-compact-label .option-label-full {
+    display: none;
+  }
+
+  .option-menu.has-compact-label .option-label-compact {
+    display: inline;
   }
 
   .option-list {

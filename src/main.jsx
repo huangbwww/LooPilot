@@ -42,9 +42,9 @@ QrScanner.WORKER_PATH = qrScannerWorkerUrl;
 const modelOptions = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex"];
 const reasoningOptions = ["low", "medium", "high", "xhigh"];
 const permissionPresetOptions = [
-  { value: "default", label: "默认权限", approvalPolicy: "on-request", sandboxMode: "workspace-write" },
-  { value: "auto-review", label: "自动审查", approvalPolicy: "never", sandboxMode: "read-only" },
-  { value: "full-access", label: "完全访问权限", approvalPolicy: "never", sandboxMode: "danger-full-access" }
+  { value: "default", label: "默认权限", shortLabel: "默认", approvalPolicy: "on-request", sandboxMode: "workspace-write" },
+  { value: "auto-review", label: "自动审查", shortLabel: "自动", approvalPolicy: "never", sandboxMode: "read-only" },
+  { value: "full-access", label: "完全访问权限", shortLabel: "完全访问", approvalPolicy: "never", sandboxMode: "danger-full-access" }
 ];
 const approvalScopeOptions = [
   { value: "turn", label: "仅本次" },
@@ -1294,6 +1294,8 @@ function OptionMenu({ icon, label, value, options, onChange }) {
   const menuRef = useRef(null);
   const selected = options.find((option) => option.value === value) || value;
   const selectedLabel = typeof selected === "string" ? selected : selected.label;
+  const selectedShortLabel = typeof selected === "string" ? selected : selected.shortLabel || selected.label;
+  const hasCompactLabel = selectedShortLabel !== selectedLabel;
 
   useEffect(() => {
     if (!open) return undefined;
@@ -1312,10 +1314,11 @@ function OptionMenu({ icon, label, value, options, onChange }) {
   }, [open]);
 
   return (
-    <div className={`option-menu ${open ? "open" : ""}`} ref={menuRef}>
+    <div className={`option-menu ${open ? "open" : ""} ${hasCompactLabel ? "has-compact-label" : ""}`} ref={menuRef}>
       <button type="button" className="option-trigger" aria-label={label} aria-expanded={open} onClick={() => setOpen((current) => !current)}>
         {icon}
-        <span>{selectedLabel}</span>
+        <span className="option-label option-label-full">{selectedLabel}</span>
+        {hasCompactLabel && <span className="option-label option-label-compact">{selectedShortLabel}</span>}
         <ChevronDown size={14} />
       </button>
       {open && (
