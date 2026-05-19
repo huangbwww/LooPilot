@@ -214,7 +214,7 @@ fs.writeFileSync(
         role: "assistant",
         content: [{
           type: "output_text",
-          text: `导入之后都是乱码\n\n![image]\n(${longDataImage.slice(0, 3000)}\n${longDataImage.slice(3000)})`
+          text: `导入之后都是乱码\n\n<image>\n![image]\n(${longDataImage.slice(0, 3000)}\n${longDataImage.slice(3000)})\n</image>`
         }]
       }
     })
@@ -311,6 +311,8 @@ test("session detail preserves split data URL images for rendering", () => {
   const text = detail.timeline[0].text;
   assert.equal(text.includes("![image]\n("), false);
   assert.match(text, /!\[image\]\(data:image\/png;base64,/);
+  assert.equal(text.includes("<image>"), false);
+  assert.equal(text.includes("</image>"), false);
   assert.equal(text.includes("\nAAAA"), false);
   assert.equal(text.includes("..."), false);
   assert.equal(text.includes(longDataImage), true);

@@ -456,7 +456,7 @@ function flattenContent(content) {
 }
 
 function normalizeDisplayText(text) {
-  return normalizeMarkdownImages(unwrapJsonEscapedPrompt(text));
+  return normalizeMarkdownImages(stripImageWrapperTags(unwrapJsonEscapedPrompt(text)));
 }
 
 function unwrapJsonEscapedPrompt(text) {
@@ -484,6 +484,10 @@ function normalizeMarkdownImages(text) {
   }).replace(/!\[([^\]]*)\]\s*\(\s*((?:<[^>]+>)|(?:[^)\s]+))(?:\s+["'][^"']*["'])?\)/g, (_match, alt, src) => {
     return `![${alt}](${src})`;
   });
+}
+
+function stripImageWrapperTags(text) {
+  return String(text || "").replace(/^\s*<\/?image>\s*$/gim, "").trim();
 }
 
 function imageSourceFromContentPart(part) {
