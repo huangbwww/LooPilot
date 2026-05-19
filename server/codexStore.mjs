@@ -14,6 +14,8 @@ const MAX_PREVIEW_CHARS = 320;
 const DEFAULT_DETAIL_ITEMS = 120;
 const MAX_DETAIL_ITEMS = 300;
 const MAX_SESSION_LIMIT = 120;
+const JSON_ESCAPED_PROMPT_MARKER = "JSON ESCAPED PROMPT:";
+const JSON_ESCAPED_PROMPT_PREFIX = "The exact task prompt is encoded below as a JSON string with Unicode escapes.";
 const parseCache = new Map();
 
 export function getCodexHome() {
@@ -259,7 +261,7 @@ function parseSessionFile(filePath, { detail, maxDetailItems = DEFAULT_DETAIL_IT
 
     if (item?.type === "message") {
       if (["developer", "system"].includes(item.role)) continue;
-      const text = flattenContent(item.content);
+      const text = unwrapJsonEscapedPrompt(flattenContent(item.content));
       if (text) {
         messageCount += 1;
         lastOutput = item.role === "assistant" ? text : lastOutput || text;
@@ -451,6 +453,23 @@ function flattenContent(content) {
     .filter(Boolean)
     .join("\n")
     .trim();
+}
+
+function unwrapJsonEscapedPrompt(text) {
+  const value = String(text || "").trim();
+  if (!value.startsWith(JSON_ESCAPED_PROMPT_PREFIX) || !value.includes(JSON_ESCAPED_PROMPT_MARKER)) return value;
+  const markerIndex = value.indexOf(JSON_ESCAPED_PROMPT_MARKER);
+  const encoded = value
+    .slice(markerIndex + JSON_ESCAPED_PROMPT_MARKER.length)
+    .trim()
+    .match(/^"(?:\\.|[^"\\])*"/s)?.[0];
+  if (!encoded) return value;
+  try {
+    const decoded = JSON.parse(encoded);
+    return typeof decoded === "string" && decoded.trim() ? decoded.trim() : value;
+  } catch {
+    return value;
+  }
 }
 
 function imageSourceFromContentPart(part) {

@@ -11,12 +11,14 @@ const bridgeSessionId = "019e1c98-c592-7dc2-a684-ffec77c153b9";
 const subagentSessionId = "019e1c98-c592-7dc2-a684-ffec77c153ba";
 const outboxOrderSessionId = "019e1c98-c592-7dc2-a684-ffec77c153bb";
 const completedPendingSessionId = "019e1c98-c592-7dc2-a684-ffec77c153bc";
+const wrappedPromptSessionId = "019e1c98-c592-7dc2-a684-ffec77c153bd";
 const rolloutDir = path.join(codexHome, "sessions", "2026", "05", "13");
 const rolloutPath = path.join(rolloutDir, `rollout-2026-05-13T09-00-00-${sessionId}.jsonl`);
 const bridgeRolloutPath = path.join(rolloutDir, `rollout-2026-05-13T09-01-00-${bridgeSessionId}.jsonl`);
 const subagentRolloutPath = path.join(rolloutDir, `rollout-2026-05-13T09-02-00-${subagentSessionId}.jsonl`);
 const outboxOrderRolloutPath = path.join(rolloutDir, `rollout-2026-05-13T09-03-00-${outboxOrderSessionId}.jsonl`);
 const completedPendingRolloutPath = path.join(rolloutDir, `rollout-2026-05-13T09-04-00-${completedPendingSessionId}.jsonl`);
+const wrappedPromptRolloutPath = path.join(rolloutDir, `rollout-2026-05-13T09-05-00-${wrappedPromptSessionId}.jsonl`);
 
 process.env.CODEX_HOME = codexHome;
 process.chdir(root);
@@ -29,7 +31,8 @@ fs.writeFileSync(
     JSON.stringify({ id: bridgeSessionId, thread_name: "Bridge Pending", updated_at: "2026-05-13T01:00:00.000Z" }),
     JSON.stringify({ id: subagentSessionId, thread_name: "Review branch", updated_at: "2026-05-13T01:00:00.000Z" }),
     JSON.stringify({ id: outboxOrderSessionId, thread_name: "Outbox Order", updated_at: "2026-05-13T01:00:00.000Z" }),
-    JSON.stringify({ id: completedPendingSessionId, thread_name: "Completed Pending", updated_at: "2026-05-13T01:00:00.000Z" })
+    JSON.stringify({ id: completedPendingSessionId, thread_name: "Completed Pending", updated_at: "2026-05-13T01:00:00.000Z" }),
+    JSON.stringify({ id: wrappedPromptSessionId, thread_name: "Wrapped Prompt", updated_at: "2026-05-13T01:00:00.000Z" })
   ].join("\n")
 );
 
@@ -169,19 +172,42 @@ fs.writeFileSync(
     })
   ].join("\n")
 );
+fs.writeFileSync(
+  wrappedPromptRolloutPath,
+  [
+    JSON.stringify({
+      timestamp: "2026-05-13T01:00:00.000Z",
+      type: "session_meta",
+      payload: { id: wrappedPromptSessionId, cwd: "D:\\LooPilot", model: "gpt-5.5" }
+    }),
+    JSON.stringify({
+      timestamp: "2026-05-13T01:00:01.000Z",
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "user",
+        content: [{
+          type: "input_text",
+          text: "The exact task prompt is encoded below as a JSON string with Unicode escapes. Interpret the escapes as Unicode characters, then follow the decoded task prompt. If the decoded prompt is a user chat message, answer that message directly. Do not mention this transport wrapper.\n\nJSON ESCAPED PROMPT:\n\"\\u957f\\u946b\\u62db\\u80a1\\u4e66\\u7684\\u534a\\u5bfc\\u4f53\\u8bbe\\u5907\\u548c\\u6750\\u6599\\u4f9b\\u5e94\\u6709\\u54ea\\u4e9b\""
+        }]
+      }
+    })
+  ].join("\n")
+);
 fs.utimesSync(rolloutPath, new Date("2026-05-13T02:00:00.000Z"), new Date("2026-05-13T02:00:00.000Z"));
 fs.utimesSync(bridgeRolloutPath, new Date("2026-05-13T01:01:00.000Z"), new Date("2026-05-13T01:01:00.000Z"));
 fs.utimesSync(subagentRolloutPath, new Date("2026-05-13T01:02:00.000Z"), new Date("2026-05-13T01:02:00.000Z"));
 fs.utimesSync(outboxOrderRolloutPath, new Date("2026-05-13T01:03:00.000Z"), new Date("2026-05-13T01:03:00.000Z"));
 fs.utimesSync(completedPendingRolloutPath, new Date("2026-05-13T01:04:00.000Z"), new Date("2026-05-13T01:04:00.000Z"));
+fs.utimesSync(wrappedPromptRolloutPath, new Date("2026-05-13T01:05:00.000Z"), new Date("2026-05-13T01:05:00.000Z"));
 
 const store = await import(`../server/codexStore.mjs?case=${Date.now()}`);
 
 test("lists Codex sessions from session_index and rollout files", () => {
   const sessions = store.listSessions();
   const session = sessions.find((item) => item.id === sessionId);
-  assert.equal(sessions.length, 5);
-  assert.equal(sessions.total, 5);
+  assert.equal(sessions.length, 6);
+  assert.equal(sessions.total, 6);
   assert.equal(sessions.hasMore, false);
   assert.equal(session.title, "Test Session");
   assert.equal(session.status, "waiting");
@@ -199,7 +225,7 @@ test("prefers rollout file mtime when session_index timestamps are stale", () =>
 test("paginates session summaries before hydrating details", () => {
   const firstPage = store.listSessionPage({ limit: 2 });
   assert.equal(firstPage.sessions.length, 2);
-  assert.equal(firstPage.total, 5);
+  assert.equal(firstPage.total, 6);
   assert.equal(firstPage.hasMore, true);
   assert.equal(firstPage.nextOffset, 2);
 
@@ -244,6 +270,13 @@ test("session detail includes timeline and pending user-input action", () => {
   assert.equal(detail.pendingAction.id, "ask-1");
   assert.equal(detail.pendingAction.kind, "input");
   assert.equal(detail.pendingAction.questions[0].id, "choice");
+});
+
+test("session detail unwraps JSON escaped transport prompts", () => {
+  const detail = store.getSessionDetail(wrappedPromptSessionId);
+  assert.equal(detail.timeline[0].role, "user");
+  assert.equal(detail.timeline[0].text, "长鑫招股书的半导体设备和材料供应有哪些");
+  assert.equal(detail.lastOutput, "长鑫招股书的半导体设备和材料供应有哪些");
 });
 
 test("session detail can be limited for mobile rendering", () => {
