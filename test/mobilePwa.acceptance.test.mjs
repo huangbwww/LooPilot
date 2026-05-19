@@ -99,6 +99,8 @@ test("phone layout exposes drawer navigation, scrim dismissal, and safe-area con
   assert.match(cssBlock(".session-surface"), /overflow-x:\s*hidden/);
   assert.match(cssBlock(".session-surface"), /overflow-y:\s*auto/);
   assert.match(cssBlock(".control-row", mobile), /grid-template-columns:\s*minmax\(0,\s*1\.05fr\)\s+minmax\(0,\s*0\.8fr\)\s+minmax\(0,\s*1\.08fr\)/);
+  assert.match(cssBlock(".control-row", mobile), /margin-bottom:\s*12px/);
+  assert.match(cssBlock(".option-trigger", mobile), /height:\s*38px/);
   assert.match(cssBlock(".option-menu.has-compact-label .option-label-full", mobile), /display:\s*none/);
   assert.match(cssBlock(".option-menu.has-compact-label .option-label-compact", mobile), /display:\s*inline/);
   assert.match(cssBlock(".choice-grid", mobile), /grid-template-columns:\s*1fr/);
@@ -239,7 +241,10 @@ test("mobile layout clamps loaded conversation content to the viewport", () => {
   assert.match(css, /\.scanner-card video\s*\{/);
   assert.match(css, /\.auth-actions\s*\{/);
   assert.match(cssBlock(".option-list"), /z-index:\s*120/);
+  assert.match(cssBlock(".option-list"), /min-width:\s*max\(100%,\s*168px\)/);
   assert.match(cssBlock(".option-list"), /max-height:\s*min\(320px,\s*42vh\)/);
+  assert.match(cssBlock(".option-list button"), /white-space:\s*nowrap/);
+  assert.match(cssBlock(".option-list button"), /text-overflow:\s*ellipsis/);
   assert.match(cssBlock(".timeline"), /width:\s*100%/);
   assert.match(cssBlock(".timeline-item"), /overflow:\s*hidden/);
   assert.match(cssBlock(".markdown-body code"), /overflow-wrap:\s*anywhere/);

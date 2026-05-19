@@ -250,10 +250,10 @@ async function startTunnel(targetPort) {
   try {
     const printedUrls = new Set();
     tunnelHandle = await startPublicTunnel(targetPort, {
-      onUrl: (publicUrl) => {
+      onUrl: async (publicUrl) => {
         if (printedUrls.has(publicUrl)) return;
         printedUrls.add(publicUrl);
-        printPairingQr(publicUrl, pairingCode);
+        await printPairingQr(publicUrl, pairingCode);
       }
     });
   } catch (error) {

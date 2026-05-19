@@ -16,7 +16,7 @@ export async function startPublicTunnel(port, options = {}) {
   const localUrl = `http://localhost:${port}`;
   if (process.env.LOOPILOT_FAKE_TUNNEL_URL) {
     console.log(`Public URL: ${process.env.LOOPILOT_FAKE_TUNNEL_URL}`);
-    options.onUrl?.(process.env.LOOPILOT_FAKE_TUNNEL_URL);
+    await options.onUrl?.(process.env.LOOPILOT_FAKE_TUNNEL_URL);
     const fake = new EventEmitter();
     fake.kill = () => fake.emit("close", 0);
     return fake;

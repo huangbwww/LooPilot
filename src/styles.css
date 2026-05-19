@@ -1089,7 +1089,7 @@ button {
   width: 100%;
   min-width: 0;
   max-width: 920px;
-  margin: 0 auto 10px;
+  margin: 0 auto 12px;
 }
 
 .attachment-strip,
@@ -1216,12 +1216,16 @@ button {
 }
 
 .option-list button {
+  min-width: 0;
   min-height: 34px;
   padding: 0 10px;
   border-radius: 6px;
   color: var(--text);
   background: transparent;
+  overflow: hidden;
   text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .option-list button.selected,
@@ -1321,11 +1325,13 @@ textarea {
     display: grid;
     grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.8fr) minmax(0, 1.08fr);
     gap: 5px;
+    margin-bottom: 12px;
     overflow: visible;
   }
 
   .option-trigger {
     width: 100%;
+    height: 38px;
     min-width: 0;
     gap: 4px;
     padding: 0 6px;
@@ -1338,9 +1344,5 @@ textarea {
 
   .option-menu.has-compact-label .option-label-compact {
     display: inline;
-  }
-
-  .option-list {
-    min-width: 100%;
   }
 }
