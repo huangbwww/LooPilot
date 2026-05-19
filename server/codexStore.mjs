@@ -14,7 +14,7 @@ const MAX_PREVIEW_CHARS = 320;
 const DEFAULT_DETAIL_ITEMS = 120;
 const MAX_DETAIL_ITEMS = 300;
 const MAX_SESSION_LIMIT = 120;
-const JSON_ESCAPED_PROMPT_MARKER = "JSON ESCAPED PROMPT:";
+const JSON_ESCAPED_PROMPT_MARKER_PATTERN = /JSON[_ ]ESCAPED[_ ]PROMPT:/i;
 const JSON_ESCAPED_PROMPT_PREFIX = "The exact task prompt is encoded below as a JSON string with Unicode escapes.";
 const parseCache = new Map();
 
@@ -261,7 +261,7 @@ function parseSessionFile(filePath, { detail, maxDetailItems = DEFAULT_DETAIL_IT
 
     if (item?.type === "message") {
       if (["developer", "system"].includes(item.role)) continue;
-      const text = unwrapJsonEscapedPrompt(flattenContent(item.content));
+      const text = normalizeDisplayText(flattenContent(item.content));
       if (text) {
         messageCount += 1;
         lastOutput = item.role === "assistant" ? text : lastOutput || text;
@@ -455,12 +455,18 @@ function flattenContent(content) {
     .trim();
 }
 
+function normalizeDisplayText(text) {
+  return normalizeMarkdownImages(unwrapJsonEscapedPrompt(text));
+}
+
 function unwrapJsonEscapedPrompt(text) {
   const value = String(text || "").trim();
-  if (!value.startsWith(JSON_ESCAPED_PROMPT_PREFIX) || !value.includes(JSON_ESCAPED_PROMPT_MARKER)) return value;
-  const markerIndex = value.indexOf(JSON_ESCAPED_PROMPT_MARKER);
+  if (!value.startsWith(JSON_ESCAPED_PROMPT_PREFIX) || !JSON_ESCAPED_PROMPT_MARKER_PATTERN.test(value)) return value;
+  const marker = value.match(JSON_ESCAPED_PROMPT_MARKER_PATTERN);
+  if (!marker) return value;
+  const markerIndex = marker.index || 0;
   const encoded = value
-    .slice(markerIndex + JSON_ESCAPED_PROMPT_MARKER.length)
+    .slice(markerIndex + marker[0].length)
     .trim()
     .match(/^"(?:\\.|[^"\\])*"/s)?.[0];
   if (!encoded) return value;
@@ -470,6 +476,14 @@ function unwrapJsonEscapedPrompt(text) {
   } catch {
     return value;
   }
+}
+
+function normalizeMarkdownImages(text) {
+  return String(text || "").replace(/!\[([^\]]*)\]\s*\(\s*(data:image\/[a-z0-9.+-]+;base64,[^)]+)\)/gis, (_match, alt, src) => {
+    return `![${alt}](${src.replace(/\s+/g, "")})`;
+  }).replace(/!\[([^\]]*)\]\s*\(\s*((?:<[^>]+>)|(?:[^)\s]+))(?:\s+["'][^"']*["'])?\)/g, (_match, alt, src) => {
+    return `![${alt}](${src})`;
+  });
 }
 
 function imageSourceFromContentPart(part) {
@@ -513,6 +527,7 @@ function pushTimeline(timeline, detail, item) {
 }
 
 function truncateForDetail(text, detail) {
+  if (detail && /data:image\/[a-z0-9.+-]+;base64,/i.test(String(text || ""))) return String(text || "").trim();
   return detail ? clip(text, 5000) : clip(text, MAX_PREVIEW_CHARS);
 }
 
