@@ -177,6 +177,9 @@ test("timeline renders markdown, local images, and compact tool summaries", () =
   assert.match(app, /function collapsePreview\(text\)/);
   assert.match(app, /function renderMarkdownBlocks\(text, sessionId, authToken, backendUrl\)/);
   assert.match(app, /function renderInline\(text, sessionId, authToken, backendUrl, keyPrefix\)/);
+  assert.match(app, /normalizeMarkdownImages\(String\(text\)\)/);
+  assert.match(app, /function normalizeMarkdownImages\(text\)/);
+  assert.match(app, /data:image\\\/\[a-z0-9\.\+-\]\+;base64/);
   assert.match(app, /function ImageBlock\(\{ src, alt, sessionId, authToken, backendUrl \}\)/);
   assert.match(app, /fetch\(apiUrl\(`\/api\/sessions\/\$\{encodeURIComponent\(sessionId\)\}\/media\?path=\$\{encodeURIComponent\(imagePathFromMarkdown\(imageSrc\)\)\}`, backendUrl\)/);
   assert.match(app, /Authorization: `Bearer \$\{authToken\}`/);

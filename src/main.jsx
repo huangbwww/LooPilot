@@ -920,7 +920,7 @@ function MarkdownContent({ text, sessionId, authToken, backendUrl }) {
 }
 
 function renderMarkdownBlocks(text, sessionId, authToken, backendUrl) {
-  const lines = String(text).replace(/\r\n/g, "\n").split("\n");
+  const lines = normalizeMarkdownImages(String(text)).replace(/\r\n/g, "\n").split("\n");
   const blocks = [];
   let paragraph = [];
   let list = [];
@@ -1054,6 +1054,14 @@ function renderInline(text, sessionId, authToken, backendUrl, keyPrefix) {
   }
   pushText(text.slice(cursor));
   return parts;
+}
+
+function normalizeMarkdownImages(text) {
+  return String(text || "").replace(/!\[([^\]]*)\]\s*\(\s*(data:image\/[a-z0-9.+-]+;base64,[^)]+)\)/gis, (_match, alt, src) => {
+    return `![${alt}](${src.replace(/\s+/g, "")})`;
+  }).replace(/!\[([^\]]*)\]\s*\(\s*((?:<[^>]+>)|(?:[^)\s]+))(?:\s+["'][^"']*["'])?\)/g, (_match, alt, src) => {
+    return `![${alt}](${src})`;
+  });
 }
 
 function ImageBlock({ src, alt, sessionId, authToken, backendUrl }) {
